@@ -1,2 +1,2 @@
-Install 
-pip install numpy opencv-python scikit-image pandas
+# Install 
+ ``` pip install numpy opencv-python scikit-image pandas ```
