@@ -14,6 +14,8 @@ Mandatory Verification Tests:
 import os
 import tempfile
 from quality_metrics import calculate_q1, create_test_image
+from q2 import calculate_q2
+import pandas as pd
 
 
 def run_verification_tests() -> None:
@@ -154,7 +156,7 @@ def run_verification_tests() -> None:
         print("=" * 80)
 
 
-def test_with_real_image(image_path: str) -> None:
+def test_with_real_image_Q1(image_path: str) -> None:
     """
     Test Q1 calculation with a real image file.
     
@@ -178,10 +180,48 @@ def test_with_real_image(image_path: str) -> None:
     print("=" * 80)
 
 
+def test_with_real_image_Q2(image_path: str):
+    
+    q2, cx, cy, d, r = calculate_q2(image_path)
+    print("="*80)
+    print(f"Image: {image_path}")
+    print(f"Centroid: ({cx:.2f}, {cy:.2f})")
+    print(f"Distance from center: {d:.2f}")
+    print(f"Normalized offset r: {r:.3f}")
+    print(f"Q2 score: {q2}")
+    print("="*80)
+    
+def batch_test_with_real_image_Q2():
+    input_dir = "test_images"
+    results = []
+
+    for fname in sorted(os.listdir(input_dir)):
+        if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".bmp")):
+            continue
+        path = os.path.join(input_dir, fname)
+        q2, cx, cy, d, r = calculate_q2(path)
+        results.append({
+            "filename": fname,
+            "Q2": q2,
+            "centroid_x": cx,
+            "centroid_y": cy,
+            "distance_d": d,
+            "r_norm": r
+        })
+
+    df = pd.DataFrame(results)
+    os.makedirs("results", exist_ok=True)
+    csv_path = "results/q2_results.csv"
+    df.to_csv(csv_path, index=False)
+    print(f"✅ Saved results to {csv_path}")
+    print(df)
+
 if __name__ == "__main__":
     # Run the main verification tests
-    run_verification_tests()
+    # run_verification_tests()
+    test_with_real_image_Q1("test_images/test_file_068.png")
+    test_with_real_image_Q2("test_images/test_file_068.png")
+    # batch_test_with_real_image_Q2()
     
     # Uncomment the line below to test with a real image
-    # test_with_real_image("path/to/your/image.bmp")
-    test_with_real_image("test_images/hand_sample.png")
+    # test_with_real_image_Q1("path/to/your/image.bmp")
