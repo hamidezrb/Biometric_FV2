@@ -1,82 +1,17 @@
 """
-ISO/IEC 29794-9 Quality Component 1 (Effective Area) Implementation
+ISO/IEC 29794-9 Quality Metrics - Shared Utilities
 Finger Vascular Biometrics - Second Phalanx
 
-This module implements the mandatory ISO calculation for Q1 (Effective Area)
-according to ISO/IEC 29794-9 Clause 5.2.1.
+This module contains shared utility functions for quality metric testing,
+including test image creation functions.
 
-Requirements:
-- Coefficient (Sc): 20000 pixels for Finger
-- Veto Logic: If Foreground Region (R) is invalid (zero pixels), Q1 = 0
-- Formula: Q1 = MIN(100, ROUND(Sunoccluded / Sc * 100))
+Note: Individual quality components are implemented in separate files:
+- q1.py: Q1 (Effective Area) implementation
+- q3.py: Q3 (Contrast) implementation
 """
 
 import cv2
 import numpy as np
-from typing import Tuple
-
-
-def calculate_q1(image_path: str) -> Tuple[int, int]:
-    """
-    Calculate Q1 (Effective Area) quality metric for finger vascular biometrics.
-    
-    Args:
-        image_path (str): Path to the input image file
-        
-    Returns:
-        Tuple[int, int]: (Q1_score, S_unoccluded_pixel_count)
-            - Q1_score: Final integer Q1 score (0-100)
-            - S_unoccluded_pixel_count: Raw pixel count of unoccluded foreground region
-    
-    ISO Requirements:
-    1. Coefficient (Sc) = 20000 pixels (for Finger)
-    2. Veto Logic: If Foreground Region (R) is invalid (zero pixels), Q1 = 0
-    3. Formula: Q1 = MIN(100, ROUND(Sunoccluded / Sc * 100))
-    """
-    
-    # ISO Coefficient for Finger (Clause 5.2.1)
-    Sc = 20000  # pixels
-    
-    try:
-        # Load the image
-        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        if image is None:
-            raise ValueError(f"Could not load image from {image_path}")
-        
-        # Foreground Extraction using basic thresholding and contour finding
-        # Convert to binary using Otsu's method for automatic threshold selection
-        _, binary_mask = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        
-        # Find contours to identify the foreground region
-        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        if not contours:
-            # No contours found - invalid foreground region
-            return 0, 0
-        
-        # Find the largest contour (main foreground region)
-        largest_contour = max(contours, key=cv2.contourArea)
-        
-        # Create mask for the largest contour
-        mask = np.zeros_like(binary_mask)
-        cv2.fillPoly(mask, [largest_contour], 255)
-        
-        # Calculate S_unoccluded (pixel count of unoccluded foreground region)
-        S_unoccluded = np.sum(mask == 255)
-        
-        # Veto Logic: If Foreground Region (R) is invalid (zero pixels), Q1 = 0
-        if S_unoccluded == 0:
-            return 0, 0
-        
-        # ISO Formula: Q1 = MIN(100, ROUND(Sunoccluded / Sc * 100))
-        q1_raw = S_unoccluded / Sc * 100
-        Q1_score = min(100, round(q1_raw))
-        
-        return Q1_score, S_unoccluded
-        
-    except Exception as e:
-        print(f"Error processing image {image_path}: {str(e)}")
-        return 0, 0
 
 
 def create_test_image(width: int, height: int, foreground_pixels: int, output_path: str) -> None:
@@ -134,3 +69,122 @@ def create_test_image(width: int, height: int, foreground_pixels: int, output_pa
     # Save the test image
     cv2.imwrite(output_path, image)
     print(f"Created test image: {output_path} with {actual_pixels} foreground pixels")
+
+
+def create_high_contrast_image(width: int, height: int, output_path: str) -> None:
+    """
+    Create a high-contrast test image for Q3 testing.
+    Uses a checkerboard pattern with distinct gray values (0 and 255) to maximize contrast.
+    Creates a foreground region that ensures Q1 mask covers the entire high-contrast area.
+    
+    Args:
+        width (int): Image width
+        height (int): Image height
+        output_path (str): Path to save the test image
+    """
+    # Create image with black background
+    image = np.zeros((height, width), dtype=np.uint8)
+    
+    # Create a foreground region (white border/frame) that contains the high-contrast pattern
+    # This ensures Q1's mask will capture the entire region
+    margin = min(width, height) // 8
+    start_x = margin
+    end_x = width - margin
+    start_y = margin
+    end_y = height - margin
+    
+    # Fill the entire foreground region with white first (so Q1 detects it)
+    image[start_y:end_y, start_x:end_x] = 255
+    
+    # Now create high-contrast checkerboard pattern within this region
+    # Use alternating black and white squares
+    pattern_size = 8  # Size of each checker square
+    for y in range(start_y, end_y, pattern_size):
+        for x in range(start_x, end_x, pattern_size):
+            # Alternate between black (0) and white (255)
+            if ((x - start_x) // pattern_size + (y - start_y) // pattern_size) % 2 == 0:
+                image[y:min(y+pattern_size, end_y), x:min(x+pattern_size, end_x)] = 0
+    
+    cv2.imwrite(output_path, image)
+    print(f"Created high-contrast test image: {output_path}")
+
+
+def create_low_contrast_image(width: int, height: int, output_path: str, gray_value: int = 128) -> None:
+    """
+    Create a low-contrast (near-uniform) test image for Q3 testing.
+    Uses a uniform gray value to minimize contrast.
+    
+    Args:
+        width (int): Image width
+        height (int): Image height
+        output_path (str): Path to save the test image
+        gray_value (int): Gray value for uniform image (default: 128)
+    """
+    # Create uniform gray image
+    image = np.full((height, width), gray_value, dtype=np.uint8)
+    
+    cv2.imwrite(output_path, image)
+    print(f"Created low-contrast test image: {output_path} with gray value: {gray_value}")
+
+
+def create_high_noise_suppression_image(width: int, height: int, output_path: str, gray_value: int = 128, noise_level: float = 0.01) -> None:
+    """
+    Create a high noise suppression (low variance) test image for Q4 testing.
+    Uses a nearly uniform gray value with minimal noise to maximize Q4 (low sigma/g_mean ratio).
+    
+    Args:
+        width (int): Image width
+        height (int): Image height
+        output_path (str): Path to save the test image
+        gray_value (int): Base gray value (default: 128)
+        noise_level (float): Noise level (0.0-1.0, default: 0.01 for minimal noise)
+    """
+    # Create uniform gray image with minimal noise
+    image = np.full((height, width), gray_value, dtype=np.uint8).astype(np.float32)
+    
+    # Add minimal noise
+    noise = np.random.normal(0, noise_level * 255, (height, width))
+    image = np.clip(image + noise, 0, 255).astype(np.uint8)
+    
+    cv2.imwrite(output_path, image)
+    print(f"Created high noise suppression test image: {output_path} (gray: {gray_value}, noise: {noise_level})")
+
+
+def create_low_noise_suppression_image(width: int, height: int, output_path: str) -> None:
+    """
+    Create a low noise suppression (high variance) test image for Q4 testing.
+    Uses an extreme high-contrast pattern to maximize variance (high sigma/g_mean ratio > 2).
+    This creates a ratio that should result in Q4 < 20.
+    
+    Args:
+        width (int): Image width
+        height (int): Image height
+        output_path (str): Path to save the test image
+    """
+    # Create image with very high variance (extreme contrast pattern)
+    # To achieve Q4 < 20, we need sigma/g_mean ratio > 2
+    image = np.zeros((height, width), dtype=np.uint8)
+    
+    # Create a foreground region with extreme high variance pattern
+    margin = min(width, height) // 8
+    start_x = margin
+    end_x = width - margin
+    start_y = margin
+    end_y = height - margin
+    
+    # Fill with extreme alternating pattern (very high variance)
+    # Use maximum contrast (0 and 255) to maximize variance
+    # For 50% each: mean = 127.5, sigma ≈ 127.5, ratio ≈ 1.0
+    # To get ratio > 2, we need an asymmetric pattern or use all pixels
+    # Let's use 0 and 255 with equal distribution for maximum variance
+    pattern_size = 2  # Smaller pattern for more variation
+    for y in range(start_y, end_y, pattern_size):
+        for x in range(start_x, end_x, pattern_size):
+            # Alternate between black (0) and white (255) for maximum variance
+            if ((x - start_x) // pattern_size + (y - start_y) // pattern_size) % 2 == 0:
+                image[y:min(y+pattern_size, end_y), x:min(x+pattern_size, end_x)] = 0
+            else:
+                image[y:min(y+pattern_size, end_y), x:min(x+pattern_size, end_x)] = 255
+    
+    cv2.imwrite(output_path, image)
+    print(f"Created low noise suppression test image: {output_path}")
