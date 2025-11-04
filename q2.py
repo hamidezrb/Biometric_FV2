@@ -1,18 +1,16 @@
 import cv2
 import numpy as np
-from skimage.filters import threshold_otsu
-from skimage.measure import label, regionprops
 from typing import Tuple, Optional
 
 
 def calculate_q2(image_path: str) -> Tuple[int, Optional[float], Optional[float], Optional[float], Optional[float]]:
     """
-    Q2 — Offset Complement (Centering) using libraries.
+    Q2 — Offset Complement (Centering) using OpenCV only.
     Steps:
       1. Read image as grayscale.
       2. Otsu threshold (both dark and bright masks).
       3. Extract largest connected component.
-      4. Compute centroid (cx, cy) using regionprops.
+      4. Compute centroid (cx, cy) using moments.
       5. Measure distance from image center.
       6. Normalize and map to [0,100].
     """
@@ -24,21 +22,30 @@ def calculate_q2(image_path: str) -> Tuple[int, Optional[float], Optional[float]
     H, W = img.shape
     x0, y0 = (W - 1) / 2.0, (H - 1) / 2.0
 
+    # Otsu thresholding using OpenCV (same as Q1)
     try:
-        T = threshold_otsu(img)
+        T, _ = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     except Exception:
         T = np.median(img)
 
-    mask_bright = (img >= T).astype(np.uint8)
-    mask_dark = (img <= T).astype(np.uint8)
+    mask_bright = (img >= T).astype(np.uint8) * 255
+    mask_dark = (img <= T).astype(np.uint8) * 255
 
     def largest_component(mask):
-        lab = label(mask, connectivity=2)
-        if lab.max() == 0:
+        """Find largest connected component using OpenCV."""
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        
+        if num_labels <= 1:  # Only background (label 0)
             return np.zeros_like(mask)
-        areas = [(lab == k).sum() for k in range(1, lab.max() + 1)]
-        k_star = 1 + int(np.argmax(areas))
-        return (lab == k_star).astype(np.uint8)
+        
+        # Find largest component (skip label 0 which is background)
+        # stats format: [x, y, width, height, area]
+        areas = stats[1:, cv2.CC_STAT_AREA]  # Get areas for all components except background
+        largest_label = np.argmax(areas) + 1  # +1 because we skipped background (label 0)
+        
+        # Create mask with only the largest component
+        component_mask = (labels == largest_label).astype(np.uint8) * 255
+        return component_mask
 
     fg_bright = largest_component(mask_bright)
     fg_dark = largest_component(mask_dark)
@@ -49,8 +56,13 @@ def calculate_q2(image_path: str) -> Tuple[int, Optional[float], Optional[float]
     if fg.sum() == 0:
         return 0, None, None, None, None
 
-    props = regionprops(fg)
-    (cy, cx) = props[0].centroid  # regionprops gives (row, col)
+    # Compute centroid using moments (OpenCV method)
+    moments = cv2.moments(fg)
+    if moments['m00'] == 0:
+        return 0, None, None, None, None
+    
+    cx = moments['m10'] / moments['m00']  # x-coordinate (column)
+    cy = moments['m01'] / moments['m00']  # y-coordinate (row)
 
     d = float(np.hypot(cx - x0, cy - y0))
     R = min(W, H) / 2.0

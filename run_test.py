@@ -16,7 +16,6 @@ import os
 import sys
 import tempfile
 from q1 import calculate_q1
-from q2 import calculate_q2
 from q3 import calculate_q3
 from quality_metrics import (
     create_test_image,
@@ -25,7 +24,8 @@ from quality_metrics import (
     create_high_noise_suppression_image,
     create_low_noise_suppression_image
 )
-import pandas as pd
+
+from q2 import calculate_q2
 
 
 def run_q1_verification_tests() -> None:
@@ -99,9 +99,6 @@ def run_q1_verification_tests() -> None:
     print("=" * 80)
 
 
-<<<<<<< HEAD
-def test_with_real_image_Q1(image_path: str) -> None:
-=======
 def run_q3_verification_tests() -> None:
     """Run Q3 and Q4 verification tests (Tests G-J)."""
     print("=" * 80)
@@ -175,14 +172,14 @@ def run_q3_verification_tests() -> None:
     print("=" * 80)
 
 
-def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_q3: bool = True, test_q4: bool = True) -> None:
->>>>>>> f632b2c (feat: Implement Q1, Q3, and Q4 quality metrics)
+def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_q2: bool = True, test_q3: bool = True, test_q4: bool = True) -> None:
     """
     Test all vein images with specified quality metrics.
     
     Args:
         images_dir (str): Directory containing vein images
         test_q1 (bool): Test Q1 if True
+        test_q2 (bool): Test Q2 if True
         test_q3 (bool): Test Q3 if True (also calculates Q4)
         test_q4 (bool): Test Q4 if True (requires Q3)
     """
@@ -190,6 +187,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
     metrics = []
     if test_q1:
         metrics.append("Q1")
+    if test_q2:
+        metrics.append("Q2")
     if test_q3:
         metrics.append("Q3")
     if test_q4 and test_q3:
@@ -244,6 +243,10 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 result['q1'] = q1_score
                 result['pixels'] = pixel_count
             
+            if test_q2:
+                q2_score, cx, cy, d, r = calculate_q2(image_path)
+                result['q2'] = q2_score if q2_score is not None else 0
+            
             if test_q3:
                 q3_score, q4_score, sigma, g_mean = calculate_q3(R_mask, Grayscale_image)
                 result['q3'] = q3_score
@@ -257,6 +260,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
             print(f"ERROR: {image_name} - {str(e)}")
             if test_q1:
                 result['q1'] = 0
+            if test_q2:
+                result['q2'] = 0
             if test_q3:
                 result['q3'] = 0
             if test_q4:
@@ -267,6 +272,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
     header_parts = ['Image']
     if test_q1:
         header_parts.append('Q1')
+    if test_q2:
+        header_parts.append('Q2')
     if test_q3:
         header_parts.append('Q3')
     if test_q4 and test_q3:
@@ -285,6 +292,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         row_parts = [r['name']]
         if test_q1:
             row_parts.append(r.get('q1', 0))
+        if test_q2:
+            row_parts.append(r.get('q2', 0))
         if test_q3:
             row_parts.append(r.get('q3', 0))
         if test_q4 and test_q3:
@@ -292,7 +301,7 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         print(header_format.format(*row_parts))
     
     # Summary
-    valid_results = [r for r in results if r.get('q1', 0) > 0 or r.get('q3', 0) > 0]
+    valid_results = [r for r in results if r.get('q1', 0) > 0 or r.get('q2', 0) > 0 or r.get('q3', 0) > 0]
     if valid_results:
         summary_parts = [f"Total: {len(valid_results)}"]
         if test_q1:
@@ -301,6 +310,9 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
             low_count = sum(1 for r in valid_results if r.get('q1', 0) < 50)
             summary_parts.append(f"Avg Q1: {avg_q1:.1f}")
             summary_parts.append(f"High: {high_count} | Low: {low_count}")
+        if test_q2:
+            avg_q2 = sum(r.get('q2', 0) for r in valid_results) / len(valid_results)
+            summary_parts.append(f"Avg Q2: {avg_q2:.1f}")
         if test_q3:
             avg_q3 = sum(r.get('q3', 0) for r in valid_results) / len(valid_results)
             summary_parts.append(f"Avg Q3: {avg_q3:.1f}")
@@ -314,55 +326,11 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
     print("=" * 70)
 
 
-def test_with_real_image_Q2(image_path: str):
-    
-    q2, cx, cy, d, r = calculate_q2(image_path)
-    print("="*80)
-    print(f"Image: {image_path}")
-    print(f"Centroid: ({cx:.2f}, {cy:.2f})")
-    print(f"Distance from center: {d:.2f}")
-    print(f"Normalized offset r: {r:.3f}")
-    print(f"Q2 score: {q2}")
-    print("="*80)
-    
-def batch_test_with_real_image_Q2():
-    input_dir = "test_images"
-    results = []
-
-    for fname in sorted(os.listdir(input_dir)):
-        if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".bmp")):
-            continue
-        path = os.path.join(input_dir, fname)
-        q2, cx, cy, d, r = calculate_q2(path)
-        results.append({
-            "filename": fname,
-            "Q2": q2,
-            "centroid_x": cx,
-            "centroid_y": cy,
-            "distance_d": d,
-            "r_norm": r
-        })
-
-    df = pd.DataFrame(results)
-    os.makedirs("results", exist_ok=True)
-    csv_path = "results/q2_results.csv"
-    df.to_csv(csv_path, index=False)
-    print(f"✅ Saved results to {csv_path}")
-    print(df)
 
 if __name__ == "__main__":
-<<<<<<< HEAD
-    # Run the main verification tests
-    # run_verification_tests()
-    test_with_real_image_Q1("test_images/test_file_068.png")
-    test_with_real_image_Q2("test_images/test_file_068.png")
-    # batch_test_with_real_image_Q2()
-    
-    # Uncomment the line below to test with a real image
-    # test_with_real_image_Q1("path/to/your/image.bmp")
-=======
     # Parse command line arguments
     test_q1 = True
+    test_q2 = True
     test_q3 = True
     test_q4 = True
     run_verify = False
@@ -371,22 +339,30 @@ if __name__ == "__main__":
         run_verify = '--verify' in sys.argv
         
         # If specific Q flags are set, use them; otherwise default to all
-        has_q_flags = '--q1' in sys.argv or '--q3' in sys.argv or '--q4' in sys.argv
+        has_q_flags = '--q1' in sys.argv or '--q2' in sys.argv or '--q3' in sys.argv or '--q4' in sys.argv
         
         if has_q_flags:
             test_q1 = '--q1' in sys.argv or '--all' in sys.argv
+            test_q2 = '--q2' in sys.argv or '--all' in sys.argv
             test_q3 = '--q3' in sys.argv or '--all' in sys.argv
             test_q4 = '--q4' in sys.argv or '--all' in sys.argv
             
             # If only one Q is specified, disable others
-            if '--q1' in sys.argv and '--q3' not in sys.argv and '--q4' not in sys.argv and '--all' not in sys.argv:
+            if '--q1' in sys.argv and not any(x in sys.argv for x in ['--q2', '--q3', '--q4', '--all']):
+                test_q2 = False
                 test_q3 = False
                 test_q4 = False
-            if '--q3' in sys.argv and '--q1' not in sys.argv and '--q4' not in sys.argv and '--all' not in sys.argv:
+            if '--q2' in sys.argv and not any(x in sys.argv for x in ['--q1', '--q3', '--q4', '--all']):
                 test_q1 = False
+                test_q3 = False
                 test_q4 = False
-            if '--q4' in sys.argv and '--q1' not in sys.argv and '--q3' not in sys.argv and '--all' not in sys.argv:
+            if '--q3' in sys.argv and not any(x in sys.argv for x in ['--q1', '--q2', '--q4', '--all']):
                 test_q1 = False
+                test_q2 = False
+                test_q4 = False
+            if '--q4' in sys.argv and not any(x in sys.argv for x in ['--q1', '--q2', '--q3', '--all']):
+                test_q1 = False
+                test_q2 = False
                 test_q3 = True  # Q4 requires Q3
         # If --verify is the only flag, keep defaults (all tests)
     
@@ -404,5 +380,4 @@ if __name__ == "__main__":
             print("\n" + "="*70 + "\n")
     
     # Test all images with selected metrics
-    test_all_images("test_images", test_q1=test_q1, test_q3=test_q3, test_q4=test_q4)
->>>>>>> f632b2c (feat: Implement Q1, Q3, and Q4 quality metrics)
+    test_all_images("test_images", test_q1=test_q1, test_q2=test_q2, test_q3=test_q3, test_q4=test_q4)
