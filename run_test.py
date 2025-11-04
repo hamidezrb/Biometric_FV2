@@ -17,6 +17,7 @@ import sys
 import tempfile
 from q1 import calculate_q1
 from q3 import calculate_q3
+from q5 import calculate_q5
 from quality_metrics import (
     create_test_image,
     create_high_contrast_image,
@@ -172,7 +173,7 @@ def run_q3_verification_tests() -> None:
     print("=" * 80)
 
 
-def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_q2: bool = True, test_q3: bool = True, test_q4: bool = True) -> None:
+def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_q2: bool = True, test_q3: bool = True, test_q4: bool = True, test_q5: bool = True) -> None:
     """
     Test all vein images with specified quality metrics.
     
@@ -182,6 +183,7 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         test_q2 (bool): Test Q2 if True
         test_q3 (bool): Test Q3 if True (also calculates Q4)
         test_q4 (bool): Test Q4 if True (requires Q3)
+        test_q5 (bool): Test Q5 if True
     """
     # Determine which metrics to test
     metrics = []
@@ -193,6 +195,9 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         metrics.append("Q3")
     if test_q4 and test_q3:
         metrics.append("Q4")
+    if test_q5:
+        metrics.append("Q5")
+    
     
     if not metrics:
         print("No quality metrics selected for testing")
@@ -253,6 +258,12 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 if test_q4:
                     result['q4'] = q4_score
                     result['ratio'] = sigma / g_mean if g_mean > 0 else 0
+                    
+            if test_q5:
+                q5_score, h_bits = calculate_q5(R_mask, Grayscale_image, bit_depth=8, scale=0.75)
+                result['q5'] = q5_score
+                result['H_bits'] = round(h_bits, 3)
+            
             
             results.append(result)
             
@@ -266,6 +277,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 result['q3'] = 0
             if test_q4:
                 result['q4'] = 0
+            if test_q5:
+                result['q5'] = 0
             results.append(result)
     
     # Output table
@@ -278,6 +291,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         header_parts.append('Q3')
     if test_q4 and test_q3:
         header_parts.append('Q4')
+    if test_q5:
+        header_parts.append('Q5')
     
     header_format = f"{{:<40}}"
     for _ in range(len(header_parts) - 1):
@@ -298,6 +313,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
             row_parts.append(r.get('q3', 0))
         if test_q4 and test_q3:
             row_parts.append(r.get('q4', 0))
+        if test_q5:
+            row_parts.append(r.get('q5', 0))
         print(header_format.format(*row_parts))
     
     # Summary
@@ -319,6 +336,9 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         if test_q4 and test_q3:
             avg_q4 = sum(r.get('q4', 0) for r in valid_results) / len(valid_results)
             summary_parts.append(f"Avg Q4: {avg_q4:.1f}")
+        if test_q5:
+            avg_q5 = sum(r.get('q5', 0) for r in valid_results) / len(valid_results)
+            summary_parts.append(f"Avg Q5: {avg_q5:.1f}")
         
         print("-" * (40 + 7 * (len(header_parts) - 1)))
         print(" | ".join(summary_parts))
@@ -333,6 +353,7 @@ if __name__ == "__main__":
     test_q2 = True
     test_q3 = True
     test_q4 = True
+    test_q5 = True 
     run_verify = False
     
     if len(sys.argv) > 1:
@@ -346,24 +367,22 @@ if __name__ == "__main__":
             test_q2 = '--q2' in sys.argv or '--all' in sys.argv
             test_q3 = '--q3' in sys.argv or '--all' in sys.argv
             test_q4 = '--q4' in sys.argv or '--all' in sys.argv
+            test_q5 = '--q5' in sys.argv or '--all' in sys.argv
             
             # If only one Q is specified, disable others
-            if '--q1' in sys.argv and not any(x in sys.argv for x in ['--q2', '--q3', '--q4', '--all']):
-                test_q2 = False
-                test_q3 = False
-                test_q4 = False
-            if '--q2' in sys.argv and not any(x in sys.argv for x in ['--q1', '--q3', '--q4', '--all']):
-                test_q1 = False
-                test_q3 = False
-                test_q4 = False
-            if '--q3' in sys.argv and not any(x in sys.argv for x in ['--q1', '--q2', '--q4', '--all']):
-                test_q1 = False
-                test_q2 = False
-                test_q4 = False
-            if '--q4' in sys.argv and not any(x in sys.argv for x in ['--q1', '--q2', '--q3', '--all']):
-                test_q1 = False
-                test_q2 = False
+            if '--q1' in sys.argv and not any(x in sys.argv for x in ['--q2','--q3','--q4','--q5','--all']):
+                test_q2 = test_q3 = test_q4 = test_q5 = False
+            if '--q2' in sys.argv and not any(x in sys.argv for x in ['--q1','--q3','--q4','--q5','--all']):
+                test_q1 = test_q3 = test_q4 = test_q5 = False
+            if '--q3' in sys.argv and not any(x in sys.argv for x in ['--q1','--q2','--q4','--q5','--all']):
+                test_q1 = test_q2 = test_q4 = test_q5 = False
+            if '--q4' in sys.argv and not any(x in sys.argv for x in ['--q1','--q2','--q3','--q5','--all']):
+                # Q4 needs Q3
+                test_q1 = test_q2 = test_q5 = False
                 test_q3 = True  # Q4 requires Q3
+            if '--q5' in sys.argv and not any(x in sys.argv for x in ['--q1','--q2','--q3','--q4','--all']):
+                # Q5 relies on Q1’s mask, but we always call calculate_q1 internally
+                test_q1 = test_q2 = test_q3 = test_q4 = False
         # If --verify is the only flag, keep defaults (all tests)
     
     # Q4 requires Q3
@@ -380,4 +399,4 @@ if __name__ == "__main__":
             print("\n" + "="*70 + "\n")
     
     # Test all images with selected metrics
-    test_all_images("test_images", test_q1=test_q1, test_q2=test_q2, test_q3=test_q3, test_q4=test_q4)
+    test_all_images("test_images", test_q1=test_q1, test_q2=test_q2, test_q3=test_q3, test_q4=test_q4, test_q5=test_q5)
