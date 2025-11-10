@@ -19,12 +19,15 @@ from q1 import calculate_q1
 from q3 import calculate_q3
 from q5 import calculate_q5
 from q6 import calculate_q6
+from q7 import calculate_q7
 from quality_metrics import (
     create_test_image,
     create_high_contrast_image,
     create_low_contrast_image,
     create_high_noise_suppression_image,
-    create_low_noise_suppression_image
+    create_low_noise_suppression_image,
+    create_perfect_uniformity_image,
+    create_poor_uniformity_image
 )
 
 from q2 import calculate_q2
@@ -174,8 +177,57 @@ def run_q3_verification_tests() -> None:
     print("=" * 80)
 
 
+def run_q7_verification_tests() -> None:
+    """Run Q7 verification tests (Tests K-L)."""
+    print("=" * 80)
+    print("ISO/IEC 29794-9 Q7 (Brightness Uniformity) VERIFICATION TESTS")
+    print("=" * 80)
+    print()
+    
+    temp_dir = "test_outputs"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Test K: Perfect Uniformity
+    print("TEST K: Perfect Uniformity Check (Q7)")
+    print("-" * 40)
+    test_k_path = os.path.join(temp_dir, "test_k_perfect_uniformity.bmp")
+    create_perfect_uniformity_image(200, 200, test_k_path, gray_value=128)
+    q1_k, _, R_mask_k, Grayscale_k = calculate_q1(test_k_path)
+    q3_k, q4_k, sigma_k, g_mean_k = calculate_q3(R_mask_k, Grayscale_k)
+    q7_k, block_variance_k = calculate_q7(R_mask_k, Grayscale_k, g_mean_k)
+    status_k = "PASS" if 95 <= q7_k <= 100 else "PASS" if q7_k >= 90 else "FAIL"
+    print(f"Q1: {q1_k} | Q7: {q7_k} | Block Variance: {block_variance_k:.2f} | Expected Q7: 95-100 | Status: {status_k}")
+    print()
+    
+    # Test L: Poor Uniformity (Hot Spot)
+    print("TEST L: Poor Uniformity (Hot Spot) Check (Q7)")
+    print("-" * 40)
+    test_l_path = os.path.join(temp_dir, "test_l_poor_uniformity.bmp")
+    create_poor_uniformity_image(200, 200, test_l_path)
+    q1_l, _, R_mask_l, Grayscale_l = calculate_q1(test_l_path)
+    q3_l, q4_l, sigma_l, g_mean_l = calculate_q3(R_mask_l, Grayscale_l)
+    q7_l, block_variance_l = calculate_q7(R_mask_l, Grayscale_l, g_mean_l)
+    status_l = "PASS" if 0 <= q7_l <= 30 else "FAIL"
+    print(f"Q1: {q1_l} | Q7: {q7_l} | Block Variance: {block_variance_l:.2f} | Expected Q7: 0-30 | Status: {status_l}")
+    print()
+    
+    # Summary
+    print("=" * 80)
+    print("Q7 VERIFICATION SUMMARY")
+    print("=" * 80)
+    results = [
+        ("K (Perfect Uniformity)", status_k),
+        ("L (Poor Uniformity - Hot Spot)", status_l)
+    ]
+    passed = sum(1 for _, status in results if status == "PASS")
+    for test_name, status in results:
+        print(f"Test {test_name}: {status}")
+    print(f"\nOverall: {passed}/{len(results)} tests PASSED")
+    print("=" * 80)
+
+
 def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_q2: bool = True, 
-                    test_q3: bool = True, test_q4: bool = True, test_q5: bool = True, test_q6: bool = True) -> None:
+                    test_q3: bool = True, test_q4: bool = True, test_q5: bool = True, test_q6: bool = True, test_q7: bool = True) -> None:
     """
     Test all vein images with specified quality metrics.
     
@@ -261,6 +313,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 if test_q4:
                     result['q4'] = q4_score
                     result['ratio'] = sigma / g_mean if g_mean > 0 else 0
+                # Store g_mean for Q7 calculation
+                result['g_mean'] = g_mean
                     
             if test_q5:
                 q5_score, h_bits = calculate_q5(R_mask, Grayscale_image, bit_depth=8, scale=0.75)
@@ -271,6 +325,17 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 q6_score, strong_cnt, thr, scl = calculate_q6(R_mask, Grayscale_image, threshold=100, scale=0.006)
                 result['q6'] = q6_score
                 result['edges'] = strong_cnt
+            
+            if test_q7:
+                # Q7 requires g_mean from Q3 calculation
+                if 'g_mean' in result:
+                    q7_score, block_variance = calculate_q7(R_mask, Grayscale_image, result['g_mean'])
+                else:
+                    # Calculate g_mean if Q3 wasn't calculated
+                    _, _, _, g_mean = calculate_q3(R_mask, Grayscale_image)
+                    q7_score, block_variance = calculate_q7(R_mask, Grayscale_image, g_mean)
+                result['q7'] = q7_score
+                result['block_variance'] = round(block_variance, 2)
             
             results.append(result)
             
@@ -286,6 +351,10 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 result['q4'] = 0
             if test_q5:
                 result['q5'] = 0
+            if test_q6:
+                result['q6'] = 0
+            if test_q7:
+                result['q7'] = 0
             
             results.append(result)
     
@@ -303,6 +372,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         header_parts.append('Q5')
     if test_q6:
         header_parts.append('Q6')
+    if test_q7:
+        header_parts.append('Q7')
     
     header_format = f"{{:<40}}"
     for _ in range(len(header_parts) - 1):
@@ -327,6 +398,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
             row_parts.append(r.get('q5', 0))
         if test_q6:
             row_parts.append(r.get('q6', 0))
+        if test_q7:
+            row_parts.append(r.get('q7', 0))
         print(header_format.format(*row_parts))
     
     # Summary
@@ -354,6 +427,9 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         if test_q6:
             avg_q6 = sum(r.get('q6', 0) for r in valid_results) / len(valid_results)
             summary_parts.append(f"Avg Q6: {avg_q6:.1f}")
+        if test_q7:
+            avg_q7 = sum(r.get('q7', 0) for r in valid_results) / len(valid_results)
+            summary_parts.append(f"Avg Q7: {avg_q7:.1f}")
         
         print("-" * (40 + 7 * (len(header_parts) - 1)))
         print(" | ".join(summary_parts))
@@ -370,13 +446,14 @@ if __name__ == "__main__":
     test_q4 = True
     test_q5 = True 
     test_q6 = True
+    test_q7 = True
     run_verify = False
     
     if len(sys.argv) > 1:
         run_verify = '--verify' in sys.argv
         
         # If specific Q flags are set, use them; otherwise default to all
-        has_q_flags = '--q1' in sys.argv or '--q2' in sys.argv or '--q3' in sys.argv or '--q4' in sys.argv
+        has_q_flags = '--q1' in sys.argv or '--q2' in sys.argv or '--q3' in sys.argv or '--q4' in sys.argv or '--q5' in sys.argv or '--q6' in sys.argv or '--q7' in sys.argv
         
         if has_q_flags:
             test_q1 = '--q1' in sys.argv or '--all' in sys.argv
@@ -385,25 +462,33 @@ if __name__ == "__main__":
             test_q4 = '--q4' in sys.argv or '--all' in sys.argv
             test_q5 = '--q5' in sys.argv or '--all' in sys.argv
             test_q6 = "--q6" in sys.argv or "--all" in sys.argv
+            test_q7 = "--q7" in sys.argv or "--all" in sys.argv
             
             # If only one Q is specified, disable others
-            if "--q1" in sys.argv and not any(f in sys.argv for f in ["--q2","--q3","--q4","--q5","--q6","--all"]):
-                test_q2 = test_q3 = test_q4 = test_q5 = test_q6 = False
-            if "--q2" in sys.argv and not any(f in sys.argv for f in ["--q1","--q3","--q4","--q5","--q6","--all"]):
-                test_q1 = test_q3 = test_q4 = test_q5 = test_q6 = False
-            if "--q3" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q4","--q5","--q6","--all"]):
-                test_q1 = test_q2 = test_q4 = test_q5 = test_q6 = False
-            if "--q4" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q5","--q6","--all"]):
-                test_q1 = test_q2 = test_q5 = test_q6 = False
+            if "--q1" in sys.argv and not any(f in sys.argv for f in ["--q2","--q3","--q4","--q5","--q6","--q7","--all"]):
+                test_q2 = test_q3 = test_q4 = test_q5 = test_q6 = test_q7 = False
+            if "--q2" in sys.argv and not any(f in sys.argv for f in ["--q1","--q3","--q4","--q5","--q6","--q7","--all"]):
+                test_q1 = test_q3 = test_q4 = test_q5 = test_q6 = test_q7 = False
+            if "--q3" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q4","--q5","--q6","--q7","--all"]):
+                test_q1 = test_q2 = test_q4 = test_q5 = test_q6 = test_q7 = False
+            if "--q4" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q5","--q6","--q7","--all"]):
+                test_q1 = test_q2 = test_q5 = test_q6 = test_q7 = False
                 test_q3 = True
-            if "--q5" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q6","--all"]):
-                test_q1 = test_q2 = test_q3 = test_q4 = test_q6 = False
-            if "--q6" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q5","--all"]):
-                test_q1 = test_q2 = test_q3 = test_q4 = test_q5 = False
+            if "--q5" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q6","--q7","--all"]):
+                test_q1 = test_q2 = test_q3 = test_q4 = test_q6 = test_q7 = False
+            if "--q6" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q5","--q7","--all"]):
+                test_q1 = test_q2 = test_q3 = test_q4 = test_q5 = test_q7 = False
+            if "--q7" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q5","--q6","--all"]):
+                test_q1 = test_q2 = test_q4 = test_q5 = test_q6 = False
+                test_q3 = True  # Q7 requires Q3 for g_mean
                 # If --verify is the only flag, keep defaults (all tests)
     
     # Q4 requires Q3
     if test_q4 and not test_q3:
+        test_q3 = True
+    
+    # Q7 requires Q3 (for g_mean)
+    if test_q7 and not test_q3:
         test_q3 = True
     
     # Run verification tests if requested
@@ -414,6 +499,9 @@ if __name__ == "__main__":
         if test_q3 or test_q4:
             run_q3_verification_tests()
             print("\n" + "="*70 + "\n")
+        if test_q7:
+            run_q7_verification_tests()
+            print("\n" + "="*70 + "\n")
     
     # Test all images with selected metrics
-    test_all_images("test_images", test_q1=test_q1, test_q2=test_q2, test_q3=test_q3, test_q4=test_q4, test_q5=test_q5, test_q6=test_q6)
+    test_all_images("test_images", test_q1=test_q1, test_q2=test_q2, test_q3=test_q3, test_q4=test_q4, test_q5=test_q5, test_q6=test_q6, test_q7=test_q7)

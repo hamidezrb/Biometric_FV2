@@ -188,3 +188,76 @@ def create_low_noise_suppression_image(width: int, height: int, output_path: str
     
     cv2.imwrite(output_path, image)
     print(f"Created low noise suppression test image: {output_path}")
+
+
+def create_perfect_uniformity_image(width: int, height: int, output_path: str, gray_value: int = 128) -> None:
+    """
+    Create a perfectly uniform image for Q7 testing (TEST K).
+    Uses a single shade of gray across the entire foreground region to achieve Q7 = 100.
+    
+    Args:
+        width (int): Image width
+        height (int): Image height
+        output_path (str): Path to save the test image
+        gray_value (int): Uniform gray value (default: 128)
+    """
+    # Create image with uniform gray value
+    image = np.full((height, width), gray_value, dtype=np.uint8)
+    
+    # Create a foreground region (white border/frame) that ensures Q1 mask covers the entire uniform area
+    margin = min(width, height) // 8
+    start_x = margin
+    end_x = width - margin
+    start_y = margin
+    end_y = height - margin
+    
+    # Fill the entire foreground region with uniform gray
+    image[start_y:end_y, start_x:end_x] = gray_value
+    
+    cv2.imwrite(output_path, image)
+    print(f"Created perfect uniformity test image: {output_path} (gray: {gray_value})")
+
+
+def create_poor_uniformity_image(width: int, height: int, output_path: str) -> None:
+    """
+    Create a poor uniformity (hot spot) image for Q7 testing (TEST L).
+    Uses a bright corner/block that is significantly brighter than the rest to achieve Q7 = 0-30.
+    
+    Args:
+        width (int): Image width
+        height (int): Image height
+        output_path (str): Path to save the test image
+    """
+    # Create image with black background
+    image = np.zeros((height, width), dtype=np.uint8)
+    
+    # Create a large foreground region (white border/frame) that ensures Q1 mask covers the entire area
+    # Use smaller margin to create larger foreground region
+    margin = min(width, height) // 10
+    start_x = margin
+    end_x = width - margin
+    start_y = margin
+    end_y = height - margin
+    
+    # Fill the entire foreground region with base gray (bright enough for Q1 to detect)
+    # Use a value that's clearly above threshold (e.g., 100) but still much darker than hot spot
+    base_gray = 100
+    image[start_y:end_y, start_x:end_x] = base_gray
+    
+    # Create a bright hot spot in one corner (top-left corner of foreground region)
+    # Make it significantly brighter to create high variance in block means
+    # Use a large hot spot to ensure it affects multiple 5x5 blocks
+    hot_spot_size = min(width, height) // 2  # Large hot spot (half the image)
+    hot_spot_x = start_x
+    hot_spot_y = start_y
+    hot_spot_end_x = min(start_x + hot_spot_size, end_x)
+    hot_spot_end_y = min(start_y + hot_spot_size, end_y)
+    
+    # Fill hot spot with very bright value (255 for maximum contrast)
+    # This creates a large difference between hot spot blocks (mean ~255) and base gray blocks (mean ~100)
+    # The variance will be: many blocks with mean ~100, many blocks with mean ~255
+    # This should create high variance in block means, resulting in low Q7 (< 30)
+    image[hot_spot_y:hot_spot_end_y, hot_spot_x:hot_spot_end_x] = 255
+    
+    cv2.imwrite(output_path, image)
+    print(f"Created poor uniformity (hot spot) test image: {output_path}")
