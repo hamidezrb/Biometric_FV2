@@ -253,6 +253,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         metrics.append("Q5")
     if test_q6:
         metrics.append("Q6")
+    if test_q7:
+        metrics.append("Q7")
     
     if not metrics:
         print("No quality metrics selected for testing")
@@ -322,9 +324,9 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 result['H_bits'] = round(h_bits, 3)
                 
             if test_q6:
-                q6_score, strong_cnt, thr, scl = calculate_q6(R_mask, Grayscale_image, threshold=100, scale=0.006)
-                result['q6'] = q6_score
-                result['edges'] = strong_cnt
+                q6_score, N100 = calculate_q6(R_mask, Grayscale_image)
+                result["q6"], result["N100"] = q6_score, N100
+            
             
             if test_q7:
                 # Q7 requires g_mean from Q3 calculation
