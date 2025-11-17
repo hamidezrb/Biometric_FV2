@@ -1,74 +1,61 @@
+
+# Offset Complement
+"""The offset complement of a vascular image is a centering score that quantifies
+how close the foreground region centroid is to the image geometric center. 
+It is computed from normalized horizontal and vertical centroid offsets on the image plane."""
+
 import cv2
 import numpy as np
 from typing import Tuple, Optional
 
-
 def calculate_q2(image_path: str) -> Tuple[int, Optional[float], Optional[float], Optional[float], Optional[float]]:
     """
-    Q2 — Offset Complement (Centering) using OpenCV only.
-    Steps:
-      1. Read image as grayscale.
-      2. Otsu threshold (both dark and bright masks).
-      3. Extract largest connected component.
-      4. Compute centroid (cx, cy) using moments.
-      5. Measure distance from image center.
-      6. Normalize and map to [0,100].
+    ISO/IEC 29794-9 Quality Component Q2 – Offset Complement (Centering)
     """
+
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img is None:
         print(f"[Q2] ERROR: Cannot read {image_path}")
         return 0, None, None, None, None
 
     H, W = img.shape
-    x0, y0 = (W - 1) / 2.0, (H - 1) / 2.0
+    gx, gy = W / 2.0, H / 2.0  # geometric center
 
-    # Otsu thresholding using OpenCV (same as Q1)
-    try:
-        T, _ = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    except Exception:
-        T = np.median(img)
+    # --- Foreground extraction (Otsu thresholding)
+    _, mask = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    mask_inv = cv2.bitwise_not(mask)
 
-    mask_bright = (img >= T).astype(np.uint8) * 255
-    mask_dark = (img <= T).astype(np.uint8) * 255
+    # Pick whichever has larger foreground area (bright or dark)
+    if np.sum(mask) < np.sum(mask_inv):
+        mask = mask_inv
 
-    def largest_component(mask):
-        """Find largest connected component using OpenCV."""
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        
-        if num_labels <= 1:  # Only background (label 0)
-            return np.zeros_like(mask)
-        
-        # Find largest component (skip label 0 which is background)
-        # stats format: [x, y, width, height, area]
-        areas = stats[1:, cv2.CC_STAT_AREA]  # Get areas for all components except background
-        largest_label = np.argmax(areas) + 1  # +1 because we skipped background (label 0)
-        
-        # Create mask with only the largest component
-        component_mask = (labels == largest_label).astype(np.uint8) * 255
-        return component_mask
-
-    fg_bright = largest_component(mask_bright)
-    fg_dark = largest_component(mask_dark)
-
-    # Choose the one with larger area
-    fg = fg_bright if fg_bright.sum() >= fg_dark.sum() else fg_dark
-
-    if fg.sum() == 0:
+    # Find largest connected component
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if num_labels <= 1:
         return 0, None, None, None, None
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    largest_label = np.argmax(areas) + 1
+    fg = (labels == largest_label).astype(np.uint8) * 255
 
-    # Compute centroid using moments (OpenCV method)
-    moments = cv2.moments(fg)
-    if moments['m00'] == 0:
+    # --- Compute centroid of foreground
+    m = cv2.moments(fg)
+    # total area = sum of pixel values / 255
+    if m['m00'] == 0:
         return 0, None, None, None, None
-    
-    cx = moments['m10'] / moments['m00']  # x-coordinate (column)
-    cy = moments['m01'] / moments['m00']  # y-coordinate (row)
+    # m['m10'] = Σ (x * pixel_value)
+    # m['m01'] = Σ (y * pixel_value)
+    cx = m['m10'] / m['m00']
+    cy = m['m01'] / m['m00']
 
-    d = float(np.hypot(cx - x0, cy - y0))
-    R = min(W, H) / 2.0
-    r = min(1.0, d / R)
+    # --- Compute normalized offsets (ISO formula)
+    S_H = abs(cx - gx) / gx
+    S_V = abs(cy - gy) / gy
+    r = np.sqrt(S_H**2 + S_V**2)
 
+    # --- Compute final Q2
     Q2 = int(round((1 - r) * 100))
     Q2 = max(0, min(100, Q2))
 
-    return Q2, cx, cy, d, r
+    # will be closer to the right side of the image → S_H increases → Q₂ decreases.
+    # If finger is centered: Cₓ moves to center → Q₂ increases.
+    return Q2, cx, cy, S_H, S_V
