@@ -321,8 +321,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 result['g_mean'] = g_mean
                     
             if test_q5:
-                # q5_score, h_bits = calculate_q5(R_mask, Grayscale_image, bit_depth=8, scale=0.75)
-                q5_score, h_bits = calculate_q5(R_mask, Grayscale_image)
+                q5_score, h_bits = calculate_q5(R_mask, Grayscale_image, bit_depth=8, scale=0.75)
+                # q5_score, h_bits = calculate_q5(R_mask, Grayscale_image)
                 result['q5'] = q5_score
                 result['H_bits'] = round(h_bits, 3)
                 

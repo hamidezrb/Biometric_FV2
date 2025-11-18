@@ -14,6 +14,10 @@ Note: Q3 and Q4 share the same statistical inputs (sigma and g_mean),
 so calculate_q3() returns both Q3 and Q4 scores together.
 """
 
+"""Contrast(Low contrast in vascular images indicates poor image quality.
+When the contrast of vascular images is low, the differentiation between 
+vascular and non-vascular areas is reduced, leading to blurred or absent vascular patterns.)"""
+
 import numpy as np
 from typing import Tuple
 from q4 import calculate_q4
@@ -77,6 +81,7 @@ def calculate_q3(R_mask: np.ndarray, Grayscale_Image: np.ndarray, bit_depth: int
     # Q3 Calculation using Formula (7): Q3 = ROUND( (Sigma / (2^D / 4)) * 100 )
     q3_raw = (sigma / normalization_factor) * 100
     Q3_score = round(q3_raw)
+    # The larger the score of the contrast component, the higher the image quality.
     Q3_score = min(100, max(0, Q3_score))
     
     # Calculate Q4 using the shared sigma and g_mean (if requested)
