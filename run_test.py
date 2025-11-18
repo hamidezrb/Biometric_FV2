@@ -13,6 +13,8 @@ Usage:
 """
 
 import os
+import cv2
+import numpy as np
 import sys
 import tempfile
 from q1 import calculate_q1
@@ -299,11 +301,11 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         result = {'name': image_name}
         
         try:
-            q1_score, pixel_count, R_mask, Grayscale_image = calculate_q1(image_path)
+            q1_score, S_unoccluded, R_mask, Grayscale_image = calculate_q1(image_path)
             
             if test_q1:
                 result['q1'] = q1_score
-                result['pixels'] = pixel_count
+                result['pixels'] = S_unoccluded
             
             if test_q2:
                 q2_score, cx, cy, d, r = calculate_q2(image_path)
@@ -319,12 +321,13 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 result['g_mean'] = g_mean
                     
             if test_q5:
-                q5_score, h_bits = calculate_q5(R_mask, Grayscale_image, bit_depth=8, scale=0.75)
+                # q5_score, h_bits = calculate_q5(R_mask, Grayscale_image, bit_depth=8, scale=0.75)
+                q5_score, h_bits = calculate_q5(R_mask, Grayscale_image)
                 result['q5'] = q5_score
                 result['H_bits'] = round(h_bits, 3)
                 
             if test_q6:
-                q6_score, N100 = calculate_q6(R_mask, Grayscale_image)
+                q6_score, N100 = calculate_q6(R_mask, Grayscale_image, S_unoccluded)
                 result["q6"], result["N100"] = q6_score, N100
             
             
@@ -440,8 +443,65 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
 
 
 
+def test_q5_all(images_dir="test_images"):
+    print("=" * 80)
+    print("QUALITY ASSESSMENT — Q5 (Information Entropy)")
+    print("=" * 80)
+
+    image_files = sorted([
+        f for f in os.listdir(images_dir)
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp"))
+    ])
+
+    if not image_files:
+        print("No images found.")
+        return
+
+    results = []
+
+    print(f"Testing {len(image_files)} image(s)...\n")
+    print("{:<45} {:>8} {:>12}".format("Image", "Q5", "Entropy(ep)"))
+    print("-" * 70)
+
+    for filename in image_files:
+        path = os.path.join(images_dir, filename)
+
+        # --- STEP 1: Extract R_mask + grayscale using Q1 procedure ---
+        try:
+            from q1 import calculate_q1
+            _, _, R_mask, gray = calculate_q1(path)
+        except Exception as e:
+            print(f"Error reading image {filename}: {e}")
+            continue
+
+
+        # DEBUG: SAVE MASK
+        mask_path = f"debug_masks/{filename}_mask.png"
+        os.makedirs("debug_masks", exist_ok=True)
+        cv2.imwrite(mask_path, R_mask)
+        print(f"Saved mask to {mask_path}")
+        # --- STEP 2: Compute Q5 using ISO method ---
+        Q5, ep , q5_raw = calculate_q5(R_mask, gray)
+
+        # Save result
+        results.append((filename, Q5, q5_raw))
+
+        # Print formatted row
+        print("{:<45} {:>8} {:>12.4f}".format(filename, Q5, q5_raw))
+         
+     
+    # --- SUMMARY ---
+    if results:
+        avg_q5 = sum(r[1] for r in results) / len(results)
+        print("-" * 70)
+        print(f"Total: {len(results)} | Avg Q5: {avg_q5:.2f}")
+        print("=" * 80)
+
+
+
 if __name__ == "__main__":
     # Parse command line arguments
+    # test_q5_all("test_images")
     test_q1 = True
     test_q2 = True
     test_q3 = True
