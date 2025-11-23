@@ -1,0 +1,70 @@
+"""
+ISO/IEC 29794-9 Quality Component 5 (Information Entropy)
+---------------------------------------------------------
+
+This implements Clause 5.2.5 exactly as written in the ISO standard.
+
+Steps:
+ 1. Extract foreground region R (0 → background, 255 → foreground)
+ 2. Compute proportion p_i of gray level i within R
+ 3. Compute entropy ep = - Σ p_i * log2(p_i)
+ 4. Set ep_c = 0.75 (ISO reference entropy)
+ 5. Map ep to [0,100] using:
+        Q5 = MIN(100, ROUND( (ep / ep_c) * 100 ))
+"""
+
+import numpy as np
+from typing import Tuple
+
+
+# ---------------------------------------------------------
+# Helper: Shannon Entropy (in bits)
+# ---------------------------------------------------------
+def _shannon_entropy(values: np.ndarray) -> float:
+    """
+    Computes Shannon entropy of grayscale values in bits.
+    values must be uint8 foreground pixel intensities.
+    """
+    if values.size == 0:
+        return 0.0
+
+    # Histogram of gray levels (0–255)
+    hist = np.bincount(values, minlength=256).astype(float)
+    p = hist / np.sum(hist)
+
+    # Avoid log problems for p=0
+    p = p[p > 0]
+
+    # Shannon entropy (bits)
+    return float(-np.sum(p * np.log2(p)))
+
+def calculate_q5(R_mask: np.ndarray,
+                 Grayscale_Image: np.ndarray,
+                 ep_c: float = 0.75) -> Tuple[int, float]:
+   
+    # Foreground region
+    fg = (R_mask == 255)
+    N = np.count_nonzero(fg)
+
+    # ISO veto rule
+    if N == 0:
+        return 0, 0.0
+
+    # Extract grayscale values inside foreground
+    # WRONG MASK IS THE PROBLEM
+    vals = Grayscale_Image[fg].astype(np.uint8)    
+    # Compute entropy in bits
+    ep = _shannon_entropy(vals)
+
+    # ISO mapping formula:
+    # Q5 = MIN(100, ROUND((ep / ep_c) * 100))
+    q5_raw = round((ep / ep_c) * 100.0)
+    
+    # The larger the score of the entropy component, the broader the distribution of gray values
+    # in the vascular image, indicating higher image quality.
+    Q5 = int(min(100.0, q5_raw))
+
+    return Q5, ep
+
+
+

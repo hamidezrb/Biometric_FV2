@@ -1,6 +1,6 @@
 """
 ISO/IEC 29794-9 Quality Component 6 (Sharpness)
-Finger Vascular Biometrics - Second Phalanx
+Clause 5.2.6 — official multi-Sobel implementation.
 
 This module re-exports the canonical Q6 implementation located in
 quality_metrics.py so that existing imports continue to work.
