@@ -38,7 +38,7 @@ def calculate_q1(image_path: str) -> Tuple[int, int, np.ndarray, np.ndarray]:
     """
     
     # ISO Coefficient for Finger (Clause 5.2.1)
-    Sc = 20000  # pixels
+    Sc = 20000  # pixels , Effective Area Standard Area = 20,000 pixels
     
     try:
         # Load the image
@@ -46,8 +46,8 @@ def calculate_q1(image_path: str) -> Tuple[int, int, np.ndarray, np.ndarray]:
         if image is None:
             raise ValueError(f"Could not load image from {image_path}")
         
-        # Foreground Extraction using basic thresholding and contour finding
-        # Convert to binary using Otsu's method for automatic threshold selection
+        # Automatic thresholding
+        # Produces a binary mask: 0 background, 255 foreground
         _, binary_mask = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         
         # Find contours to identify the foreground region
@@ -59,14 +59,17 @@ def calculate_q1(image_path: str) -> Tuple[int, int, np.ndarray, np.ndarray]:
             zero_mask = np.zeros_like(image)
             return 0, 0, zero_mask, image
         
-        # Find the largest contour (main foreground region)
+        # Find the largest contour (main foreground region) (Finds the biggest shape)
+        #Assumes the largest object is the finger
         largest_contour = max(contours, key=cv2.contourArea)
         
         # Create mask for the largest contour (R_mask)
         R_mask = np.zeros_like(binary_mask)
-        cv2.fillPoly(R_mask, [largest_contour], 255)
+        cv2.fillPoly(R_mask, [largest_contour], 255)#draw the finger shape in pure white
         
+
         # Calculate S_unoccluded (pixel count of unoccluded foreground region)
+        #How many pixels are in the finger?”
         S_unoccluded = np.sum(R_mask == 255)
         
         # Veto Logic: If Foreground Region (R) is invalid (zero pixels), Q1 = 0

@@ -32,6 +32,7 @@ def calculate_q4(sigma: float, g_mean: float) -> int:
     """
     
     # Veto Logic: If g_mean is zero, return Q4 = 0
+    #If it’s zero (all black), the picture is bad, so Q4 = 0.
     if g_mean == 0.0:
         return 0
     
@@ -50,5 +51,5 @@ def calculate_q4(sigma: float, g_mean: float) -> int:
     # Cap at 100
     Q4_score = min(100, max(0, Q4_score))
     
-    return Q4_score
+    return Q4_score#
 

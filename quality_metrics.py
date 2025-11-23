@@ -12,6 +12,7 @@ Note: Individual quality components are implemented in separate files:
 
 import cv2
 import numpy as np
+from typing import Tuple
 
 
 def create_test_image(width: int, height: int, foreground_pixels: int, output_path: str) -> None:
@@ -261,3 +262,103 @@ def create_poor_uniformity_image(width: int, height: int, output_path: str) -> N
     
     cv2.imwrite(output_path, image)
     print(f"Created poor uniformity (hot spot) test image: {output_path}")
+
+
+def create_high_sharpness_image(width: int, height: int, output_path: str) -> None:
+    """
+    Create a high-sharpness synthetic image for Q6 testing (TEST K).
+    Generates crisp edges and diagonals that should yield a high N100 count.
+    """
+    image = np.zeros((height, width), dtype=np.uint8)
+
+    # Draw bright rectangle with sharp edges
+    margin = min(width, height) // 6
+    top_left = (margin, margin)
+    bottom_right = (width - margin, height - margin)
+    cv2.rectangle(image, top_left, bottom_right, 255, thickness=3)
+
+    # Add diagonal lines for additional sharp features
+    cv2.line(image, top_left, bottom_right, 255, thickness=2)
+    cv2.line(image, (margin, height - margin), (width - margin, margin), 255, thickness=2)
+
+    cv2.imwrite(output_path, image)
+    print(f"Created high sharpness test image: {output_path}")
+
+
+def create_blurred_image(width: int, height: int, output_path: str) -> None:
+    """
+    Create a blurred (low-sharpness) image for Q6 testing (TEST L).
+    """
+    image = np.zeros((height, width), dtype=np.uint8)
+
+    margin = min(width, height) // 4
+    cv2.rectangle(image, (margin, margin), (width - margin, height - margin), 200, thickness=-1)
+
+    blurred = cv2.GaussianBlur(image, (31, 31), sigmaX=12, sigmaY=12)
+    cv2.imwrite(output_path, blurred)
+    print(f"Created blurred test image: {output_path}")
+
+
+def _sobel_4dir(gray: np.ndarray) -> np.ndarray:
+    """
+    Compute Sobel responses in four directions (0°, 45°, 90°, 135°) and average magnitudes.
+    """
+    if gray.dtype != np.float32:
+        gray_f = gray.astype(np.float32)
+    else:
+        gray_f = gray
+
+    gx = cv2.Sobel(gray_f, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray_f, cv2.CV_32F, 0, 1, ksize=3)
+
+    k45 = np.array([[0, 1, 2],
+                    [-1, 0, 1],
+                    [-2, -1, 0]], dtype=np.float32)
+    k135 = np.array([[2, 1, 0],
+                     [1, 0, -1],
+                     [0, -1, -2]], dtype=np.float32)
+
+    g45 = cv2.filter2D(gray_f, cv2.CV_32F, k45)
+    g135 = cv2.filter2D(gray_f, cv2.CV_32F, k135)
+
+    w_mean = (np.abs(gx) + np.abs(gy) + np.abs(g45) + np.abs(g135)) / 4.0
+    return w_mean
+
+
+def calculate_q6(R_mask: np.ndarray,
+                 Grayscale_Image: np.ndarray,
+                 S_unoccluded: int,
+                 gc: float = 0.006,
+                 threshold: int = 100) -> Tuple[int, int]:
+    """
+    Calculate Q6 (Sharpness) following ISO/IEC 29794-9 Clause 5.2.6.
+
+    Returns (Q6_score, N100) where N100 is the count of normalized edge responses > threshold.
+    """
+    foreground = (R_mask == 255)
+    if S_unoccluded <= 0 or np.count_nonzero(foreground) == 0:
+        return 0, 0
+
+    gray = Grayscale_Image
+    if gray.dtype != np.uint8:
+        gray = gray.astype(np.uint8)
+
+    w_mean = _sobel_4dir(gray)
+    min_val = float(w_mean.min())
+    max_val = float(w_mean.max())
+    if max_val > min_val:
+        w_norm = (w_mean - min_val) * (255.0 / (max_val - min_val))
+    else:
+        w_norm = np.zeros_like(w_mean, dtype=np.float32)
+
+    strong_edges_mask = (w_norm > threshold) & foreground
+    N100 = int(np.count_nonzero(strong_edges_mask))
+
+    denominator = gc * S_unoccluded
+    if denominator <= 0:
+        return 0, N100
+
+    q6_raw = (N100 / denominator) * 100.0
+    Q6_score = int(round(q6_raw))
+    Q6_score = max(0, min(100, Q6_score))
+    return Q6_score, N100

@@ -18,7 +18,6 @@ import tempfile
 from q1 import calculate_q1
 from q3 import calculate_q3
 from q5 import calculate_q5
-from q6 import calculate_q6
 from q7 import calculate_q7
 from quality_metrics import (
     create_test_image,
@@ -27,7 +26,9 @@ from quality_metrics import (
     create_high_noise_suppression_image,
     create_low_noise_suppression_image,
     create_perfect_uniformity_image,
-    create_poor_uniformity_image
+    create_poor_uniformity_image,
+    create_high_sharpness_image,
+    create_blurred_image
 )
 
 from q2 import calculate_q2
@@ -119,10 +120,10 @@ def run_q3_verification_tests() -> None:
     print("-" * 40)
     test_g_path = os.path.join(temp_dir, "test_g_high_contrast.bmp")
     create_high_contrast_image(200, 200, test_g_path)
-    q1_g, _, R_mask_g, Grayscale_g = calculate_q1(test_g_path)
-    q3_g, q4_g, sigma_g, g_mean_g = calculate_q3(R_mask_g, Grayscale_g)
-    status_g = "PASS" if 95 <= q3_g <= 100 or q3_g >= 80 else "FAIL"
-    print(f"Q1: {q1_g} | Sigma: {sigma_g:.2f} | Q3: {q3_g} | Q4: {q4_g} | Expected Q3: 95-100 | Status: {status_g}")
+    q1_g, S_g, R_mask_g, Grayscale_g = calculate_q1(test_g_path)
+    q3_g, q4_g, q6_g, sigma_g, g_mean_g, n100_g = calculate_q3(R_mask_g, Grayscale_g, S_g, include_q4=True, include_q6=True)
+    status_g = "PASS" if q3_g >= 95 else "FAIL"
+    print(f"Q1: {q1_g} | Sigma: {sigma_g:.2f} | Q3: {q3_g} | Q4: {q4_g} | Q6: {q6_g} | N100: {n100_g} | Expected Q3: 95-100 | Status: {status_g}")
     print()
     
     # Test H: Low Contrast
@@ -130,10 +131,10 @@ def run_q3_verification_tests() -> None:
     print("-" * 40)
     test_h_path = os.path.join(temp_dir, "test_h_low_contrast.bmp")
     create_low_contrast_image(200, 200, test_h_path, gray_value=128)
-    q1_h, _, R_mask_h, Grayscale_h = calculate_q1(test_h_path)
-    q3_h, q4_h, sigma_h, g_mean_h = calculate_q3(R_mask_h, Grayscale_h)
+    q1_h, S_h, R_mask_h, Grayscale_h = calculate_q1(test_h_path)
+    q3_h, q4_h, q6_h, sigma_h, g_mean_h, n100_h = calculate_q3(R_mask_h, Grayscale_h, S_h, include_q4=True, include_q6=True)
     status_h = "PASS" if 0 <= q3_h <= 10 else "FAIL"
-    print(f"Q1: {q1_h} | Sigma: {sigma_h:.2f} | Q3: {q3_h} | Q4: {q4_h} | Expected Q3: 0-10 | Status: {status_h}")
+    print(f"Q1: {q1_h} | Sigma: {sigma_h:.2f} | Q3: {q3_h} | Q4: {q4_h} | Q6: {q6_h} | N100: {n100_h} | Expected Q3: 0-10 | Status: {status_h}")
     print()
     
     # Test I: High Noise Suppression (Q4)
@@ -141,11 +142,11 @@ def run_q3_verification_tests() -> None:
     print("-" * 40)
     test_i_path = os.path.join(temp_dir, "test_i_high_noise_suppression.bmp")
     create_high_noise_suppression_image(200, 200, test_i_path, gray_value=128, noise_level=0.01)
-    q1_i, _, R_mask_i, Grayscale_i = calculate_q1(test_i_path)
-    q3_i, q4_i, sigma_i, g_mean_i = calculate_q3(R_mask_i, Grayscale_i)
+    q1_i, S_i, R_mask_i, Grayscale_i = calculate_q1(test_i_path)
+    q3_i, q4_i, q6_i, sigma_i, g_mean_i, n100_i = calculate_q3(R_mask_i, Grayscale_i, S_i, include_q4=True, include_q6=True)
     ratio_i = sigma_i / g_mean_i if g_mean_i > 0 else 0
-    status_i = "PASS" if 95 <= q4_i <= 100 else "PASS" if q4_i >= 80 else "FAIL"
-    print(f"Q1: {q1_i} | Sigma: {sigma_i:.2f} | g_mean: {g_mean_i:.2f} | Ratio: {ratio_i:.4f} | Q4: {q4_i} | Expected: 95-100 | Status: {status_i}")
+    status_i = "PASS" if q4_i >= 95 else "FAIL"
+    print(f"Q1: {q1_i} | Sigma: {sigma_i:.2f} | g_mean: {g_mean_i:.2f} | Ratio: {ratio_i:.4f} | Q4: {q4_i} | Q6: {q6_i} | Expected Q4: 95-100 | Status: {status_i}")
     print()
     
     # Test J: Low Noise Suppression (Q4)
@@ -153,11 +154,11 @@ def run_q3_verification_tests() -> None:
     print("-" * 40)
     test_j_path = os.path.join(temp_dir, "test_j_low_noise_suppression.bmp")
     create_low_noise_suppression_image(200, 200, test_j_path)
-    q1_j, _, R_mask_j, Grayscale_j = calculate_q1(test_j_path)
-    q3_j, q4_j, sigma_j, g_mean_j = calculate_q3(R_mask_j, Grayscale_j)
+    q1_j, S_j, R_mask_j, Grayscale_j = calculate_q1(test_j_path)
+    q3_j, q4_j, q6_j, sigma_j, g_mean_j, n100_j = calculate_q3(R_mask_j, Grayscale_j, S_j, include_q4=True, include_q6=True)
     ratio_j = sigma_j / g_mean_j if g_mean_j > 0 else 0
     status_j = "PASS" if 0 <= q4_j <= 20 else "FAIL"
-    print(f"Q1: {q1_j} | Sigma: {sigma_j:.2f} | g_mean: {g_mean_j:.2f} | Ratio: {ratio_j:.4f} | Q4: {q4_j} | Expected: 0-20 | Status: {status_j}")
+    print(f"Q1: {q1_j} | Sigma: {sigma_j:.2f} | g_mean: {g_mean_j:.2f} | Ratio: {ratio_j:.4f} | Q4: {q4_j} | Q6: {q6_j} | Expected Q4: 0-20 | Status: {status_j}")
     print()
     
     # Summary
@@ -177,8 +178,54 @@ def run_q3_verification_tests() -> None:
     print("=" * 80)
 
 
+def run_q6_verification_tests() -> None:
+    """Run Q6 verification tests (Tests K-L)."""
+    print("=" * 80)
+    print("ISO/IEC 29794-9 Q6 (Sharpness) VERIFICATION TESTS")
+    print("=" * 80)
+    print()
+    
+    temp_dir = "test_outputs"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Test K: High Sharpness
+    print("TEST K: High Sharpness Check (Q6)")
+    print("-" * 40)
+    test_k_path = os.path.join(temp_dir, "test_k_high_sharpness.bmp")
+    create_high_sharpness_image(200, 200, test_k_path)
+    q1_k, S_k, R_mask_k, Grayscale_k = calculate_q1(test_k_path)
+    _, _, q6_k, _, _, n100_k = calculate_q3(R_mask_k, Grayscale_k, S_k, include_q4=False, include_q6=True)
+    status_k = "PASS" if q6_k >= 90 else "FAIL"
+    print(f"Q1: {q1_k} | Q6: {q6_k} | N100: {n100_k} | Expected Q6: 90-100 | Status: {status_k}")
+    print()
+    
+    # Test L: Perfect Blur
+    print("TEST L: Perfect Blur Check (Q6)")
+    print("-" * 40)
+    test_l_path = os.path.join(temp_dir, "test_l_perfect_blur.bmp")
+    create_blurred_image(200, 200, test_l_path)
+    q1_l, S_l, R_mask_l, Grayscale_l = calculate_q1(test_l_path)
+    _, _, q6_l, _, _, n100_l = calculate_q3(R_mask_l, Grayscale_l, S_l, include_q4=False, include_q6=True)
+    status_l = "PASS" if 0 <= q6_l <= 10 else "FAIL"
+    print(f"Q1: {q1_l} | Q6: {q6_l} | N100: {n100_l} | Expected Q6: 0-10 | Status: {status_l}")
+    print()
+    
+    print("=" * 80)
+    print("Q6 VERIFICATION SUMMARY")
+    print("=" * 80)
+    results = [
+        ("K (High Sharpness)", status_k),
+        ("L (Perfect Blur)", status_l)
+    ]
+    passed = sum(1 for _, status in results if status == "PASS")
+    for test_name, status in results:
+        print(f"Test {test_name}: {status}")
+    print(f"\nOverall: {passed}/{len(results)} tests PASSED")
+    print("=" * 80)
+
+
 def run_q7_verification_tests() -> None:
-    """Run Q7 verification tests (Tests K-L)."""
+    """Run Q7 verification tests (Tests M-N)."""
     print("=" * 80)
     print("ISO/IEC 29794-9 Q7 (Brightness Uniformity) VERIFICATION TESTS")
     print("=" * 80)
@@ -187,28 +234,28 @@ def run_q7_verification_tests() -> None:
     temp_dir = "test_outputs"
     os.makedirs(temp_dir, exist_ok=True)
     
-    # Test K: Perfect Uniformity
-    print("TEST K: Perfect Uniformity Check (Q7)")
+    # Test M: Perfect Uniformity
+    print("TEST M: Perfect Uniformity Check (Q7)")
     print("-" * 40)
-    test_k_path = os.path.join(temp_dir, "test_k_perfect_uniformity.bmp")
-    create_perfect_uniformity_image(200, 200, test_k_path, gray_value=128)
-    q1_k, _, R_mask_k, Grayscale_k = calculate_q1(test_k_path)
-    q3_k, q4_k, sigma_k, g_mean_k = calculate_q3(R_mask_k, Grayscale_k)
-    q7_k, block_variance_k = calculate_q7(R_mask_k, Grayscale_k, g_mean_k)
-    status_k = "PASS" if 95 <= q7_k <= 100 else "PASS" if q7_k >= 90 else "FAIL"
-    print(f"Q1: {q1_k} | Q7: {q7_k} | Block Variance: {block_variance_k:.2f} | Expected Q7: 95-100 | Status: {status_k}")
+    test_m_path = os.path.join(temp_dir, "test_m_perfect_uniformity.bmp")
+    create_perfect_uniformity_image(200, 200, test_m_path, gray_value=128)
+    q1_m, S_m, R_mask_m, Grayscale_m = calculate_q1(test_m_path)
+    _, _, _, _, g_mean_m, _ = calculate_q3(R_mask_m, Grayscale_m, S_m, include_q4=False, include_q6=False)
+    q7_m, block_variance_m = calculate_q7(R_mask_m, Grayscale_m, g_mean_m)
+    status_m = "PASS" if q7_m >= 95 else "FAIL"
+    print(f"Q1: {q1_m} | Q7: {q7_m} | Block Variance: {block_variance_m:.2f} | Expected Q7: 95-100 | Status: {status_m}")
     print()
     
-    # Test L: Poor Uniformity (Hot Spot)
-    print("TEST L: Poor Uniformity (Hot Spot) Check (Q7)")
+    # Test N: Poor Uniformity (Hot Spot)
+    print("TEST N: Poor Uniformity (Hot Spot) Check (Q7)")
     print("-" * 40)
-    test_l_path = os.path.join(temp_dir, "test_l_poor_uniformity.bmp")
-    create_poor_uniformity_image(200, 200, test_l_path)
-    q1_l, _, R_mask_l, Grayscale_l = calculate_q1(test_l_path)
-    q3_l, q4_l, sigma_l, g_mean_l = calculate_q3(R_mask_l, Grayscale_l)
-    q7_l, block_variance_l = calculate_q7(R_mask_l, Grayscale_l, g_mean_l)
-    status_l = "PASS" if 0 <= q7_l <= 30 else "FAIL"
-    print(f"Q1: {q1_l} | Q7: {q7_l} | Block Variance: {block_variance_l:.2f} | Expected Q7: 0-30 | Status: {status_l}")
+    test_n_path = os.path.join(temp_dir, "test_n_poor_uniformity.bmp")
+    create_poor_uniformity_image(200, 200, test_n_path)
+    q1_n, S_n, R_mask_n, Grayscale_n = calculate_q1(test_n_path)
+    _, _, _, _, g_mean_n, _ = calculate_q3(R_mask_n, Grayscale_n, S_n, include_q4=False, include_q6=False)
+    q7_n, block_variance_n = calculate_q7(R_mask_n, Grayscale_n, g_mean_n)
+    status_n = "PASS" if 0 <= q7_n <= 30 else "FAIL"
+    print(f"Q1: {q1_n} | Q7: {q7_n} | Block Variance: {block_variance_n:.2f} | Expected Q7: 0-30 | Status: {status_n}")
     print()
     
     # Summary
@@ -216,8 +263,8 @@ def run_q7_verification_tests() -> None:
     print("Q7 VERIFICATION SUMMARY")
     print("=" * 80)
     results = [
-        ("K (Perfect Uniformity)", status_k),
-        ("L (Poor Uniformity - Hot Spot)", status_l)
+        ("M (Perfect Uniformity)", status_m),
+        ("N (Poor Uniformity - Hot Spot)", status_n)
     ]
     passed = sum(1 for _, status in results if status == "PASS")
     for test_name, status in results:
@@ -253,6 +300,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         metrics.append("Q5")
     if test_q6:
         metrics.append("Q6")
+    if test_q7:
+        metrics.append("Q7")
     
     if not metrics:
         print("No quality metrics selected for testing")
@@ -297,43 +346,52 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         result = {'name': image_name}
         
         try:
-            q1_score, pixel_count, R_mask, Grayscale_image = calculate_q1(image_path)
+            q1_score, S_unoccluded, R_mask, Grayscale_image = calculate_q1(image_path)
             
             if test_q1:
                 result['q1'] = q1_score
-                result['pixels'] = pixel_count
+                result['pixels'] = S_unoccluded
             
             if test_q2:
                 q2_score, cx, cy, d, r = calculate_q2(image_path)
                 result['q2'] = q2_score if q2_score is not None else 0
             
-            if test_q3:
-                q3_score, q4_score, sigma, g_mean = calculate_q3(R_mask, Grayscale_image)
-                result['q3'] = q3_score
+            need_q_stats = test_q3 or test_q4 or test_q6 or test_q7
+            if need_q_stats:
+                q3_score, q4_score, q6_score, sigma, g_mean, n100 = calculate_q3(
+                    R_mask,
+                    Grayscale_image,
+                    S_unoccluded,
+                    include_q4=test_q4,
+                    include_q6=test_q6
+                )
+                if test_q3:
+                    result['q3'] = q3_score
                 if test_q4:
                     result['q4'] = q4_score
-                    result['ratio'] = sigma / g_mean if g_mean > 0 else 0
-                # Store g_mean for Q7 calculation
+                    result['ratio'] = (sigma / g_mean) if g_mean and g_mean > 0 else 0
+                if test_q6:
+                    result['q6'] = q6_score
+                    result['N100'] = n100
                 result['g_mean'] = g_mean
-                    
+                result['sigma'] = sigma
+            
             if test_q5:
                 q5_score, h_bits = calculate_q5(R_mask, Grayscale_image, bit_depth=8, scale=0.75)
                 result['q5'] = q5_score
                 result['H_bits'] = round(h_bits, 3)
-                
-            if test_q6:
-                q6_score, strong_cnt, thr, scl = calculate_q6(R_mask, Grayscale_image, threshold=100, scale=0.006)
-                result['q6'] = q6_score
-                result['edges'] = strong_cnt
             
             if test_q7:
-                # Q7 requires g_mean from Q3 calculation
-                if 'g_mean' in result:
-                    q7_score, block_variance = calculate_q7(R_mask, Grayscale_image, result['g_mean'])
-                else:
-                    # Calculate g_mean if Q3 wasn't calculated
-                    _, _, _, g_mean = calculate_q3(R_mask, Grayscale_image)
-                    q7_score, block_variance = calculate_q7(R_mask, Grayscale_image, g_mean)
+                g_mean_for_q7 = result.get('g_mean')
+                if g_mean_for_q7 is None:
+                    _, _, _, _, g_mean_for_q7, _ = calculate_q3(
+                        R_mask,
+                        Grayscale_image,
+                        S_unoccluded,
+                        include_q4=False,
+                        include_q6=False
+                    )
+                q7_score, block_variance = calculate_q7(R_mask, Grayscale_image, g_mean_for_q7)
                 result['q7'] = q7_score
                 result['block_variance'] = round(block_variance, 2)
             
@@ -498,6 +556,9 @@ if __name__ == "__main__":
             print("\n" + "="*70 + "\n")
         if test_q3 or test_q4:
             run_q3_verification_tests()
+            print("\n" + "="*70 + "\n")
+        if test_q6:
+            run_q6_verification_tests()
             print("\n" + "="*70 + "\n")
         if test_q7:
             run_q7_verification_tests()
