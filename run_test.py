@@ -30,10 +30,47 @@ from quality_metrics import (
     create_perfect_uniformity_image,
     create_poor_uniformity_image,
     create_high_sharpness_image,
-    create_blurred_image
+    create_blurred_image,
+    create_high_vessel_density_image,
+    create_low_vessel_density_image
 )
 
 from q2 import calculate_q2
+from q8 import calculate_q8, _skeletonize
+
+
+def display_vessel_skeleton(R_mask: np.ndarray, Grayscale_Image: np.ndarray) -> None:
+    """
+    Runs the Vessel Extraction Pipeline (Binarization + Thinning) and displays the result.
+    The result should be the single-pixel-thick vein network used for Q8/Q9.
+    
+    Args:
+        R_mask (np.ndarray): Binary mask of foreground region (255 for foreground, 0 for background)
+        Grayscale_Image (np.ndarray): Original grayscale image
+    """
+    print("\n--- DISPLAYING VESSEL SKELETON (1-Pixel Thickness) ---")
+    
+    foreground_mask = (R_mask == 255)
+    gray = Grayscale_Image.astype(np.uint8)
+
+    # 1. Binarization (Using Otsu on Foreground Region)
+    foreground_region = gray[foreground_mask]
+    if foreground_region.size > 0:
+        threshold_value, _ = cv2.threshold(foreground_region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        binarized = np.zeros_like(gray, dtype=np.uint8)
+        binarized[foreground_mask] = (gray[foreground_mask] > threshold_value).astype(np.uint8) * 255
+    else:
+        print("Error: Foreground area is empty.")
+        return
+        
+    # 2. Thinning (Skeletonization)
+    skeleton_image = _skeletonize(binarized)
+    
+    # 3. Visualization
+    cv2.imshow("Q8: Thinned Vessel Skeleton (1-Pixel Lines)", skeleton_image)
+    print("Press any key to continue testing...")
+    cv2.waitKey(0) 
+    cv2.destroyAllWindows()
 
 
 def run_q1_verification_tests() -> None:
@@ -123,7 +160,7 @@ def run_q3_verification_tests() -> None:
     test_g_path = os.path.join(temp_dir, "test_g_high_contrast.bmp")
     create_high_contrast_image(200, 200, test_g_path)
     q1_g, S_g, R_mask_g, Grayscale_g = calculate_q1(test_g_path)
-    q3_g, q4_g, q6_g, sigma_g, g_mean_g, n100_g = calculate_q3(R_mask_g, Grayscale_g, S_g, include_q4=True, include_q6=True)
+    q3_g, q4_g, q6_g, q8_g, sigma_g, g_mean_g, n100_g, n_vessel_g = calculate_q3(R_mask_g, Grayscale_g, S_g, include_q4=True, include_q6=True, include_q8=True)
     status_g = "PASS" if q3_g >= 95 else "FAIL"
     print(f"Q1: {q1_g} | Sigma: {sigma_g:.2f} | Q3: {q3_g} | Q4: {q4_g} | Q6: {q6_g} | N100: {n100_g} | Expected Q3: 95-100 | Status: {status_g}")
     print()
@@ -134,7 +171,7 @@ def run_q3_verification_tests() -> None:
     test_h_path = os.path.join(temp_dir, "test_h_low_contrast.bmp")
     create_low_contrast_image(200, 200, test_h_path, gray_value=128)
     q1_h, S_h, R_mask_h, Grayscale_h = calculate_q1(test_h_path)
-    q3_h, q4_h, q6_h, sigma_h, g_mean_h, n100_h = calculate_q3(R_mask_h, Grayscale_h, S_h, include_q4=True, include_q6=True)
+    q3_h, q4_h, q6_h, q8_h, sigma_h, g_mean_h, n100_h, n_vessel_h = calculate_q3(R_mask_h, Grayscale_h, S_h, include_q4=True, include_q6=True, include_q8=True)
     status_h = "PASS" if 0 <= q3_h <= 10 else "FAIL"
     print(f"Q1: {q1_h} | Sigma: {sigma_h:.2f} | Q3: {q3_h} | Q4: {q4_h} | Q6: {q6_h} | N100: {n100_h} | Expected Q3: 0-10 | Status: {status_h}")
     print()
@@ -145,7 +182,7 @@ def run_q3_verification_tests() -> None:
     test_i_path = os.path.join(temp_dir, "test_i_high_noise_suppression.bmp")
     create_high_noise_suppression_image(200, 200, test_i_path, gray_value=128, noise_level=0.01)
     q1_i, S_i, R_mask_i, Grayscale_i = calculate_q1(test_i_path)
-    q3_i, q4_i, q6_i, sigma_i, g_mean_i, n100_i = calculate_q3(R_mask_i, Grayscale_i, S_i, include_q4=True, include_q6=True)
+    q3_i, q4_i, q6_i, q8_i, sigma_i, g_mean_i, n100_i, n_vessel_i = calculate_q3(R_mask_i, Grayscale_i, S_i, include_q4=True, include_q6=True, include_q8=True)
     ratio_i = sigma_i / g_mean_i if g_mean_i > 0 else 0
     status_i = "PASS" if q4_i >= 95 else "FAIL"
     print(f"Q1: {q1_i} | Sigma: {sigma_i:.2f} | g_mean: {g_mean_i:.2f} | Ratio: {ratio_i:.4f} | Q4: {q4_i} | Q6: {q6_i} | Expected Q4: 95-100 | Status: {status_i}")
@@ -157,7 +194,7 @@ def run_q3_verification_tests() -> None:
     test_j_path = os.path.join(temp_dir, "test_j_low_noise_suppression.bmp")
     create_low_noise_suppression_image(200, 200, test_j_path)
     q1_j, S_j, R_mask_j, Grayscale_j = calculate_q1(test_j_path)
-    q3_j, q4_j, q6_j, sigma_j, g_mean_j, n100_j = calculate_q3(R_mask_j, Grayscale_j, S_j, include_q4=True, include_q6=True)
+    q3_j, q4_j, q6_j, q8_j, sigma_j, g_mean_j, n100_j, n_vessel_j = calculate_q3(R_mask_j, Grayscale_j, S_j, include_q4=True, include_q6=True, include_q8=True)
     ratio_j = sigma_j / g_mean_j if g_mean_j > 0 else 0
     status_j = "PASS" if 0 <= q4_j <= 20 else "FAIL"
     print(f"Q1: {q1_j} | Sigma: {sigma_j:.2f} | g_mean: {g_mean_j:.2f} | Ratio: {ratio_j:.4f} | Q4: {q4_j} | Q6: {q6_j} | Expected Q4: 0-20 | Status: {status_j}")
@@ -196,7 +233,7 @@ def run_q6_verification_tests() -> None:
     test_k_path = os.path.join(temp_dir, "test_k_high_sharpness.bmp")
     create_high_sharpness_image(200, 200, test_k_path)
     q1_k, S_k, R_mask_k, Grayscale_k = calculate_q1(test_k_path)
-    _, _, q6_k, _, _, n100_k = calculate_q3(R_mask_k, Grayscale_k, S_k, include_q4=False, include_q6=True)
+    _, _, q6_k, q8_k, _, _, n100_k, n_vessel_k = calculate_q3(R_mask_k, Grayscale_k, S_k, include_q4=False, include_q6=True, include_q8=True)
     status_k = "PASS" if q6_k >= 90 else "FAIL"
     print(f"Q1: {q1_k} | Q6: {q6_k} | N100: {n100_k} | Expected Q6: 90-100 | Status: {status_k}")
     print()
@@ -207,7 +244,7 @@ def run_q6_verification_tests() -> None:
     test_l_path = os.path.join(temp_dir, "test_l_perfect_blur.bmp")
     create_blurred_image(200, 200, test_l_path)
     q1_l, S_l, R_mask_l, Grayscale_l = calculate_q1(test_l_path)
-    _, _, q6_l, _, _, n100_l = calculate_q3(R_mask_l, Grayscale_l, S_l, include_q4=False, include_q6=True)
+    _, _, q6_l, q8_l, _, _, n100_l, n_vessel_l = calculate_q3(R_mask_l, Grayscale_l, S_l, include_q4=False, include_q6=True, include_q8=True)
     status_l = "PASS" if 0 <= q6_l <= 10 else "FAIL"
     print(f"Q1: {q1_l} | Q6: {q6_l} | N100: {n100_l} | Expected Q6: 0-10 | Status: {status_l}")
     print()
@@ -242,7 +279,7 @@ def run_q7_verification_tests() -> None:
     test_m_path = os.path.join(temp_dir, "test_m_perfect_uniformity.bmp")
     create_perfect_uniformity_image(200, 200, test_m_path, gray_value=128)
     q1_m, S_m, R_mask_m, Grayscale_m = calculate_q1(test_m_path)
-    _, _, _, _, g_mean_m, _ = calculate_q3(R_mask_m, Grayscale_m, S_m, include_q4=False, include_q6=False)
+    _, _, _, q8_m, _, g_mean_m, _, n_vessel_m = calculate_q3(R_mask_m, Grayscale_m, S_m, include_q4=False, include_q6=False, include_q8=True)
     q7_m, block_variance_m = calculate_q7(R_mask_m, Grayscale_m, g_mean_m)
     status_m = "PASS" if q7_m >= 95 else "FAIL"
     print(f"Q1: {q1_m} | Q7: {q7_m} | Block Variance: {block_variance_m:.2f} | Expected Q7: 95-100 | Status: {status_m}")
@@ -254,7 +291,7 @@ def run_q7_verification_tests() -> None:
     test_n_path = os.path.join(temp_dir, "test_n_poor_uniformity.bmp")
     create_poor_uniformity_image(200, 200, test_n_path)
     q1_n, S_n, R_mask_n, Grayscale_n = calculate_q1(test_n_path)
-    _, _, _, _, g_mean_n, _ = calculate_q3(R_mask_n, Grayscale_n, S_n, include_q4=False, include_q6=False)
+    _, _, _, q8_n, _, g_mean_n, _, n_vessel_n = calculate_q3(R_mask_n, Grayscale_n, S_n, include_q4=False, include_q6=False, include_q8=True)
     q7_n, block_variance_n = calculate_q7(R_mask_n, Grayscale_n, g_mean_n)
     status_n = "PASS" if 0 <= q7_n <= 30 else "FAIL"
     print(f"Q1: {q1_n} | Q7: {q7_n} | Block Variance: {block_variance_n:.2f} | Expected Q7: 0-30 | Status: {status_n}")
@@ -275,8 +312,64 @@ def run_q7_verification_tests() -> None:
     print("=" * 80)
 
 
+def run_q8_verification_tests(display_skeleton: bool = False) -> None:
+    """Run Q8 verification tests (Tests O-P).
+    
+    Args:
+        display_skeleton (bool): If True, display the vessel skeleton visualization for each test
+    """
+    print("=" * 80)
+    print("ISO/IEC 29794-9 Q8 (Total Vascular Length) VERIFICATION TESTS")
+    print("=" * 80)
+    print()
+    
+    temp_dir = "test_outputs"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Test O: High Vessel Density
+    print("TEST O: High Vessel Density Check (Q8)")
+    print("-" * 40)
+    test_o_path = os.path.join(temp_dir, "test_o_high_vessel_density.bmp")
+    create_high_vessel_density_image(200, 200, test_o_path, target_pixels=800)
+    q1_o, S_o, R_mask_o, Grayscale_o = calculate_q1(test_o_path)
+    _, _, _, q8_o, _, _, _, n_vessel_o = calculate_q3(R_mask_o, Grayscale_o, S_o, include_q4=False, include_q6=False, include_q8=True)
+    status_o = "PASS" if q8_o >= 90 else "FAIL"
+    print(f"Q1: {q1_o} | Q8: {q8_o} | N_vessel: {n_vessel_o} | Expected Q8: 90-100 | Status: {status_o}")
+    if display_skeleton and q1_o > 0:
+        display_vessel_skeleton(R_mask_o, Grayscale_o)
+    print()
+    
+    # Test P: Low Vessel Density
+    print("TEST P: Low Vessel Density Check (Q8)")
+    print("-" * 40)
+    test_p_path = os.path.join(temp_dir, "test_p_low_vessel_density.bmp")
+    create_low_vessel_density_image(200, 200, test_p_path, target_pixels=150)
+    q1_p, S_p, R_mask_p, Grayscale_p = calculate_q1(test_p_path)
+    _, _, _, q8_p, _, _, _, n_vessel_p = calculate_q3(R_mask_p, Grayscale_p, S_p, include_q4=False, include_q6=False, include_q8=True)
+    status_p = "PASS" if 20 <= q8_p <= 30 else "FAIL"
+    print(f"Q1: {q1_p} | Q8: {q8_p} | N_vessel: {n_vessel_p} | Expected Q8: 20-30 | Status: {status_p}")
+    if display_skeleton and q1_p > 0:
+        display_vessel_skeleton(R_mask_p, Grayscale_p)
+    print()
+    
+    # Summary
+    print("=" * 80)
+    print("Q8 VERIFICATION SUMMARY")
+    print("=" * 80)
+    results = [
+        ("O (High Vessel Density)", status_o),
+        ("P (Low Vessel Density)", status_p)
+    ]
+    passed = sum(1 for _, status in results if status == "PASS")
+    for test_name, status in results:
+        print(f"Test {test_name}: {status}")
+    print(f"\nOverall: {passed}/{len(results)} tests PASSED")
+    print("=" * 80)
+
+
 def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_q2: bool = True, 
-                    test_q3: bool = True, test_q4: bool = True, test_q5: bool = True, test_q6: bool = True, test_q7: bool = True) -> None:
+                    test_q3: bool = True, test_q4: bool = True, test_q5: bool = True, test_q6: bool = True, test_q7: bool = True, test_q8: bool = True, 
+                    display_skeleton: bool = False) -> None:
     """
     Test all vein images with specified quality metrics.
     
@@ -304,6 +397,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         metrics.append("Q6")
     if test_q7:
         metrics.append("Q7")
+    if test_q8:
+        metrics.append("Q8")
     
     if not metrics:
         print("No quality metrics selected for testing")
@@ -358,14 +453,15 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 q2_score, cx, cy, d, r = calculate_q2(image_path)
                 result['q2'] = q2_score if q2_score is not None else 0
             
-            need_q_stats = test_q3 or test_q4 or test_q6 or test_q7
+            need_q_stats = test_q3 or test_q4 or test_q6 or test_q7 or test_q8
             if need_q_stats:
-                q3_score, q4_score, q6_score, sigma, g_mean, n100 = calculate_q3(
+                q3_score, q4_score, q6_score, q8_score, sigma, g_mean, n100, n_vessel = calculate_q3(
                     R_mask,
                     Grayscale_image,
                     S_unoccluded,
                     include_q4=test_q4,
-                    include_q6=test_q6
+                    include_q6=test_q6,
+                    include_q8=test_q8
                 )
                 if test_q3:
                     result['q3'] = q3_score
@@ -375,6 +471,13 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 if test_q6:
                     result['q6'] = q6_score
                     result['N100'] = n100
+                if test_q8:
+                    result['q8'] = q8_score
+                    result['N_vessel'] = n_vessel
+                    # Optionally display skeleton visualization
+                    if display_skeleton and q1_score > 0:
+                        print(f"\nDisplaying vessel skeleton for: {image_name}")
+                        display_vessel_skeleton(R_mask, Grayscale_image)
                 result['g_mean'] = g_mean
                 result['sigma'] = sigma
             
@@ -387,12 +490,13 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
             if test_q7:
                 g_mean_for_q7 = result.get('g_mean')
                 if g_mean_for_q7 is None:
-                    _, _, _, _, g_mean_for_q7, _ = calculate_q3(
+                    _, _, _, _, _, g_mean_for_q7, _, _ = calculate_q3(
                         R_mask,
                         Grayscale_image,
                         S_unoccluded,
                         include_q4=False,
-                        include_q6=False
+                        include_q6=False,
+                        include_q8=False
                     )
                 q7_score, block_variance = calculate_q7(R_mask, Grayscale_image, g_mean_for_q7)
                 result['q7'] = q7_score
@@ -416,6 +520,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
                 result['q6'] = 0
             if test_q7:
                 result['q7'] = 0
+            if test_q8:
+                result['q8'] = 0
             
             results.append(result)
     
@@ -435,6 +541,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         header_parts.append('Q6')
     if test_q7:
         header_parts.append('Q7')
+    if test_q8:
+        header_parts.append('Q8')
     
     header_format = f"{{:<40}}"
     for _ in range(len(header_parts) - 1):
@@ -461,6 +569,8 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
             row_parts.append(r.get('q6', 0))
         if test_q7:
             row_parts.append(r.get('q7', 0))
+        if test_q8:
+            row_parts.append(r.get('q8', 0))
         print(header_format.format(*row_parts))
     
     # Summary
@@ -491,6 +601,9 @@ def test_all_images(images_dir: str = "test_images", test_q1: bool = True, test_
         if test_q7:
             avg_q7 = sum(r.get('q7', 0) for r in valid_results) / len(valid_results)
             summary_parts.append(f"Avg Q7: {avg_q7:.1f}")
+        if test_q8:
+            avg_q8 = sum(r.get('q8', 0) for r in valid_results) / len(valid_results)
+            summary_parts.append(f"Avg Q8: {avg_q8:.1f}")
         
         print("-" * (40 + 7 * (len(header_parts) - 1)))
         print(" | ".join(summary_parts))
@@ -565,13 +678,16 @@ if __name__ == "__main__":
     test_q5 = True 
     test_q6 = True
     test_q7 = True
+    test_q8 = True
     run_verify = False
+    display_skeleton = False
     
     if len(sys.argv) > 1:
         run_verify = '--verify' in sys.argv
+        display_skeleton = '--display-skeleton' in sys.argv or '--show-skeleton' in sys.argv
         
         # If specific Q flags are set, use them; otherwise default to all
-        has_q_flags = '--q1' in sys.argv or '--q2' in sys.argv or '--q3' in sys.argv or '--q4' in sys.argv or '--q5' in sys.argv or '--q6' in sys.argv or '--q7' in sys.argv
+        has_q_flags = '--q1' in sys.argv or '--q2' in sys.argv or '--q3' in sys.argv or '--q4' in sys.argv or '--q5' in sys.argv or '--q6' in sys.argv or '--q7' in sys.argv or '--q8' in sys.argv
         
         if has_q_flags:
             test_q1 = '--q1' in sys.argv or '--all' in sys.argv
@@ -581,24 +697,28 @@ if __name__ == "__main__":
             test_q5 = '--q5' in sys.argv or '--all' in sys.argv
             test_q6 = "--q6" in sys.argv or "--all" in sys.argv
             test_q7 = "--q7" in sys.argv or "--all" in sys.argv
+            test_q8 = "--q8" in sys.argv or "--all" in sys.argv
             
             # If only one Q is specified, disable others
-            if "--q1" in sys.argv and not any(f in sys.argv for f in ["--q2","--q3","--q4","--q5","--q6","--q7","--all"]):
-                test_q2 = test_q3 = test_q4 = test_q5 = test_q6 = test_q7 = False
-            if "--q2" in sys.argv and not any(f in sys.argv for f in ["--q1","--q3","--q4","--q5","--q6","--q7","--all"]):
-                test_q1 = test_q3 = test_q4 = test_q5 = test_q6 = test_q7 = False
-            if "--q3" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q4","--q5","--q6","--q7","--all"]):
-                test_q1 = test_q2 = test_q4 = test_q5 = test_q6 = test_q7 = False
-            if "--q4" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q5","--q6","--q7","--all"]):
-                test_q1 = test_q2 = test_q5 = test_q6 = test_q7 = False
+            if "--q1" in sys.argv and not any(f in sys.argv for f in ["--q2","--q3","--q4","--q5","--q6","--q7","--q8","--all"]):
+                test_q2 = test_q3 = test_q4 = test_q5 = test_q6 = test_q7 = test_q8 = False
+            if "--q2" in sys.argv and not any(f in sys.argv for f in ["--q1","--q3","--q4","--q5","--q6","--q7","--q8","--all"]):
+                test_q1 = test_q3 = test_q4 = test_q5 = test_q6 = test_q7 = test_q8 = False
+            if "--q3" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q4","--q5","--q6","--q7","--q8","--all"]):
+                test_q1 = test_q2 = test_q4 = test_q5 = test_q6 = test_q7 = test_q8 = False
+            if "--q4" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q5","--q6","--q7","--q8","--all"]):
+                test_q1 = test_q2 = test_q5 = test_q6 = test_q7 = test_q8 = False
                 test_q3 = True
-            if "--q5" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q6","--q7","--all"]):
-                test_q1 = test_q2 = test_q3 = test_q4 = test_q6 = test_q7 = False
-            if "--q6" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q5","--q7","--all"]):
-                test_q1 = test_q2 = test_q3 = test_q4 = test_q5 = test_q7 = False
-            if "--q7" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q5","--q6","--all"]):
-                test_q1 = test_q2 = test_q4 = test_q5 = test_q6 = False
+            if "--q5" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q6","--q7","--q8","--all"]):
+                test_q1 = test_q2 = test_q3 = test_q4 = test_q6 = test_q7 = test_q8 = False
+            if "--q6" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q5","--q7","--q8","--all"]):
+                test_q1 = test_q2 = test_q3 = test_q4 = test_q5 = test_q7 = test_q8 = False
+            if "--q7" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q5","--q6","--q8","--all"]):
+                test_q1 = test_q2 = test_q4 = test_q5 = test_q6 = test_q8 = False
                 test_q3 = True  # Q7 requires Q3 for g_mean
+            if "--q8" in sys.argv and not any(f in sys.argv for f in ["--q1","--q2","--q3","--q4","--q5","--q6","--q7","--all"]):
+                test_q1 = test_q2 = test_q4 = test_q5 = test_q6 = test_q7 = False
+                test_q3 = True  # Q8 requires Q3 for unified statistical block
                 # If --verify is the only flag, keep defaults (all tests)
     
     # Q4 requires Q3
@@ -607,6 +727,10 @@ if __name__ == "__main__":
     
     # Q7 requires Q3 (for g_mean)
     if test_q7 and not test_q3:
+        test_q3 = True
+    
+    # Q8 requires Q3 (for unified statistical block)
+    if test_q8 and not test_q3:
         test_q3 = True
     
     # Run verification tests if requested
@@ -623,6 +747,9 @@ if __name__ == "__main__":
         if test_q7:
             run_q7_verification_tests()
             print("\n" + "="*70 + "\n")
+        if test_q8:
+            run_q8_verification_tests(display_skeleton=display_skeleton)
+            print("\n" + "="*70 + "\n")
     
     # Test all images with selected metrics
-    test_all_images("test_images", test_q1=test_q1, test_q2=test_q2, test_q3=test_q3, test_q4=test_q4, test_q5=test_q5, test_q6=test_q6, test_q7=test_q7)
+    test_all_images("test_images", test_q1=test_q1, test_q2=test_q2, test_q3=test_q3, test_q4=test_q4, test_q5=test_q5, test_q6=test_q6, test_q7=test_q7, test_q8=test_q8, display_skeleton=display_skeleton)

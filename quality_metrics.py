@@ -299,6 +299,95 @@ def create_blurred_image(width: int, height: int, output_path: str) -> None:
     print(f"Created blurred test image: {output_path}")
 
 
+def create_high_vessel_density_image(width: int, height: int, output_path: str, target_pixels: int = 800) -> None:
+    """
+    Create a high vessel density image for Q8 testing (TEST M).
+    Generates a pattern with many thin lines that will result in high N_vessel after skeletonization.
+    
+    Args:
+        width (int): Image width
+        height (int): Image height
+        output_path (str): Path to save the test image
+        target_pixels (int): Target number of vessel pixels after skeletonization (default: 800)
+    """
+    image = np.zeros((height, width), dtype=np.uint8)
+    
+    # Create a foreground region
+    margin = min(width, height) // 8
+    start_x = margin
+    end_x = width - margin
+    start_y = margin
+    end_y = height - margin
+    
+    # Fill foreground region with base gray value (bright enough for Q1 to detect)
+    image[start_y:end_y, start_x:end_x] = 200
+    
+    # Draw multiple thin lines (vessels) to create high density
+    # Use a grid pattern with many intersecting lines
+    line_spacing = 8
+    line_thickness = 1
+    
+    # Horizontal lines
+    for y in range(start_y, end_y, line_spacing):
+        cv2.line(image, (start_x, y), (end_x, y), 255, line_thickness)
+    
+    # Vertical lines
+    for x in range(start_x, end_x, line_spacing):
+        cv2.line(image, (x, start_y), (x, end_y), 255, line_thickness)
+    
+    # Diagonal lines for additional density
+    for offset in range(0, min(end_x - start_x, end_y - start_y), line_spacing * 2):
+        cv2.line(image, (start_x + offset, start_y), 
+                (min(start_x + offset + (end_y - start_y), end_x), end_y), 255, line_thickness)
+        cv2.line(image, (start_x, start_y + offset),
+                (end_x, min(start_y + offset + (end_x - start_x), end_y)), 255, line_thickness)
+    
+    cv2.imwrite(output_path, image)
+    print(f"Created high vessel density test image: {output_path} (target pixels: {target_pixels})")
+
+
+def create_low_vessel_density_image(width: int, height: int, output_path: str, target_pixels: int = 150) -> None:
+    """
+    Create a low vessel density image for Q8 testing (TEST N).
+    Generates a sparse pattern with few lines that will result in low N_vessel after skeletonization.
+    
+    Args:
+        width (int): Image width
+        height (int): Image height
+        output_path (str): Path to save the test image
+        target_pixels (int): Target number of vessel pixels after skeletonization (default: 150)
+    """
+    image = np.zeros((height, width), dtype=np.uint8)
+    
+    # Create a foreground region
+    margin = min(width, height) // 8
+    start_x = margin
+    end_x = width - margin
+    start_y = margin
+    end_y = height - margin
+    
+    # Fill foreground region with base gray value (bright enough for Q1 to detect)
+    image[start_y:end_y, start_x:end_x] = 200
+    
+    # Draw sparse lines (vessels) to create low density
+    # Use wide spacing between lines
+    line_spacing = 40
+    line_thickness = 1
+    
+    # Only a few horizontal lines
+    for y in range(start_y, end_y, line_spacing):
+        if y < end_y:
+            cv2.line(image, (start_x, y), (end_x, y), 255, line_thickness)
+    
+    # Only a few vertical lines
+    for x in range(start_x, end_x, line_spacing):
+        if x < end_x:
+            cv2.line(image, (x, start_y), (x, end_y), 255, line_thickness)
+    
+    cv2.imwrite(output_path, image)
+    print(f"Created low vessel density test image: {output_path} (target pixels: {target_pixels})")
+
+
 def _sobel_4dir(gray: np.ndarray) -> np.ndarray:
     """
     Compute Sobel responses in four directions (0°, 45°, 90°, 135°) and average magnitudes.
@@ -362,3 +451,5 @@ def calculate_q6(R_mask: np.ndarray,
     Q6_score = int(round(q6_raw))
     Q6_score = max(0, min(100, Q6_score))
     return Q6_score, N100
+
+

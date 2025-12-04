@@ -22,6 +22,7 @@ import numpy as np
 from typing import Tuple
 from q4 import calculate_q4
 from quality_metrics import calculate_q6
+from q8 import calculate_q8
 
 
 def calculate_q3(R_mask: np.ndarray,
@@ -30,9 +31,11 @@ def calculate_q3(R_mask: np.ndarray,
                  bit_depth: int = 8,
                  include_q4: bool = True,
                  include_q6: bool = True,
-                 gc: float = 0.006) -> Tuple[int, int, int, float, float, int]:
+                 include_q8: bool = True,
+                 gc: float = 0.006,
+                 Lc: int = 600) -> Tuple[int, int, int, int, float, float, int, int]:
     """
-    Calculate Q3 (Contrast), Q4 (Equivalent Number of Looks), and Q6 (Sharpness).
+    Calculate Q3 (Contrast), Q4 (Equivalent Number of Looks), Q6 (Sharpness), and Q8 (Total Vascular Length).
     These metrics share the same statistical inputs (sigma and g_mean).
     
     Args:
@@ -42,17 +45,21 @@ def calculate_q3(R_mask: np.ndarray,
         bit_depth (int): Bit depth of the image (default: 8 for 8-bit images)
         include_q4 (bool): Whether to calculate Q4
         include_q6 (bool): Whether to calculate Q6
+        include_q8 (bool): Whether to calculate Q8
         gc (float): Scaling coefficient for Q6 (default 0.006)
+        Lc (int): Coefficient for Q8 (default 600 for Finger, Second phalanx)
         
     Returns:
-        Tuple[int, int, int, float, float, int]:
-            (Q3_score, Q4_score, Q6_score, sigma, g_mean, N100)
+        Tuple[int, int, int, int, float, float, int, int]:
+            (Q3_score, Q4_score, Q6_score, Q8_score, sigma, g_mean, N100, N_vessel)
             - Q3_score: Final integer Q3 score (0-100)
             - Q4_score: Final integer Q4 score (0-100)
             - Q6_score: Final integer Q6 score (0-100)
+            - Q8_score: Final integer Q8 score (0-100)
             - sigma: Standard deviation of pixel values within R_mask
             - g_mean: Mean grayscale value within R_mask
             - N100: Strong edge count used in Q6
+            - N_vessel: Total vessel length (pixel count) used in Q8
     
     ISO Requirements [Clause 5.2.3, 5.2.4, and 5.2.6]:
     Q3:
@@ -79,7 +86,7 @@ def calculate_q3(R_mask: np.ndarray,
     N = np.sum(foreground_mask)
     
     if N == 0:
-        return 0, 0, 0, 0.0, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0.0, 0, 0
     
     # Extract pixel values within the foreground region
     ##all the gray colors inside the finger
@@ -117,5 +124,10 @@ def calculate_q3(R_mask: np.ndarray,
     else:
         Q6_score, N100 = 0, 0
     
-    return Q3_score, Q4_score, Q6_score, sigma, g_mean, N100
+    if include_q8:
+        Q8_score, N_vessel = calculate_q8(R_mask, Grayscale_Image, Lc=Lc)
+    else:
+        Q8_score, N_vessel = 0, 0
+    
+    return Q3_score, Q4_score, Q6_score, Q8_score, sigma, g_mean, N100, N_vessel
 
