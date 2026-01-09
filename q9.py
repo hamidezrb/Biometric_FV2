@@ -122,6 +122,7 @@ def compute_q9_feature_points(
 
 # ---------------- Example usage ----------------
 if __name__ == "__main__":
+    
     # Example placeholders:
     # gray = cv2.imread("your_image.png", cv2.IMREAD_GRAYSCALE)
     # foreground_mask = ... (bool)
