@@ -99,3 +99,82 @@ def calculate_q7(R_mask: np.ndarray, Grayscale_Image: np.ndarray, g_mean: float)
     
     return Q7_score, block_variance
 
+
+
+
+# ******************************ISO-aligned*************************************
+
+
+import numpy as np
+from typing import Tuple
+
+
+def calculate_q7_ISO(
+    R_mask: np.ndarray,
+    Grayscale_Image: np.ndarray,
+    g_mean: float,
+    block_size: int = 5,
+    min_fg_ratio: float = 0.5
+) -> Tuple[int, float]:
+    """
+    Q7 (Brightness Uniformity) — ISO/IEC 29794-9 Clause 5.2.7
+
+    Fix:
+    - Only include blocks with sufficient foreground coverage.
+      This avoids unstable means from blocks that intersect the ROI boundary.
+
+    Args:
+        R_mask: uint8 mask, 255=foreground, 0=background
+        Grayscale_Image: grayscale image
+        g_mean: global mean inside foreground region (x_mean)
+        block_size: block size (default 5)
+        min_fg_ratio: minimum ratio of pixels inside R required to accept a block (default 0.5)
+
+    Returns:
+        (Q7_score, block_variance)
+    """
+    fg = (R_mask == 255)
+    if np.count_nonzero(fg) == 0:
+        return 0, 0.0
+
+    H, W = Grayscale_Image.shape
+    bs = int(block_size)
+    if bs <= 0 or bs > H or bs > W:
+        return 0, 0.0
+
+    # Minimum number of foreground pixels required in a block
+    min_fg_count = int(np.ceil(min_fg_ratio * (bs * bs)))
+
+    block_means = []
+
+    for y in range(H - bs + 1):
+        for x in range(W - bs + 1):
+            block_mask = fg[y:y+bs, x:x+bs]
+            fg_count = int(np.count_nonzero(block_mask))
+
+            # ISO-robust: ignore blocks with too little ROI support
+            if fg_count < min_fg_count:
+                continue
+
+            block_img = Grayscale_Image[y:y+bs, x:x+bs]
+            xi_mean = float(np.mean(block_img[block_mask]))
+            block_means.append(xi_mean)
+
+    Nb = len(block_means)
+    if Nb == 0:
+        return 0, 0.0
+
+    x_mean = float(g_mean)
+    block_means_array = np.asarray(block_means, dtype=np.float64)
+
+    # (1/Nb) * Σ (xi_mean - x_mean)^2
+    block_variance = float(np.mean((block_means_array - x_mean) ** 2))
+
+    # Q7 = round( (1 - (1/121) * sqrt(variance)) * 100 )
+    sqrt_variance = np.sqrt(block_variance)
+    q7_raw = (1.0 - (1.0 / 121.0) * sqrt_variance) * 100.0
+    Q7_score = int(round(q7_raw))
+    Q7_score = max(0, min(100, Q7_score))
+
+    return Q7_score, block_variance
+
