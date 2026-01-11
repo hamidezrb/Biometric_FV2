@@ -68,3 +68,48 @@ def calculate_q5(R_mask: np.ndarray,
     Q5 = int(round(q5_raw))
     Q5 = max(0, min(100, Q5))
     return Q5, H_bits
+
+
+
+# ******************************ISO-aligned*************************************
+
+def calculate_q5_ISO(
+    R_mask: np.ndarray,
+    Grayscale_Image: np.ndarray,
+    bit_depth: int = 8,
+    ep_c: float = 0.75
+) -> Tuple[int, float]:
+    """
+    Q5 — Information Entropy (ISO/IEC 29794-9 PWI draft, Formula (10)).
+
+    Steps:
+    1) Compute Shannon entropy H_bits inside foreground region R.
+    2) Normalize: ep = H_bits / D
+    3) Map to [0,100] using ep_c=0.75:
+          Q5 = min(100, round((ep / ep_c) * 100))
+
+    Veto:
+    - If R is invalid (area=0), Q5 = 0
+
+    Returns:
+        (Q5_score, H_bits)
+    """
+    fg = (R_mask == 255)
+    if np.count_nonzero(fg) == 0:
+        return 0, 0.0
+
+    vals = Grayscale_Image[fg].astype(np.uint8)
+    H_bits = _shannon_entropy(vals, bit_depth=bit_depth)
+
+    # Normalized entropy ep in [0,1] (for D-bit images)
+    ep = H_bits / float(bit_depth) if bit_depth > 0 else 0.0
+
+    # ISO/PWI Formula (10): Q5 = min(100, round((ep / ep_c) * 100))
+    if ep_c <= 0:
+        return 0, H_bits
+
+    q5_raw = (ep / float(ep_c)) * 100.0
+    Q5 = int(round(q5_raw))
+    Q5 = max(0, min(100, Q5))
+
+    return Q5, H_bits
