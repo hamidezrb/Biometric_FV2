@@ -59,3 +59,73 @@ def calculate_q2(image_path: str) -> Tuple[int, Optional[float], Optional[float]
     # will be closer to the right side of the image → S_H increases → Q₂ decreases.
     # If finger is centered: Cₓ moves to center → Q₂ increases.
     return Q2, cx, cy, S_H, S_V
+
+
+
+
+# ******************************ISO-aligned*************************************
+ 
+
+def calculate_q2_from_mask(
+    R_mask: np.ndarray,
+    grayscale_image: np.ndarray
+) -> Tuple[int, Optional[float], Optional[float], Optional[float], Optional[float]]:
+    """
+    ISO/IEC 29794-9 Quality Component Q2 – Offset Complement (Centering)
+
+    ISO intent:
+    - Use the foreground region R (same as Q1).
+    - Compute centroid of R, compare to image geometric center.
+    - Q2 = round((1 - r) * 100), clipped to [0,100]
+      where r = sqrt(S_H^2 + S_V^2),
+            S_H = |cx - gx| / gx,
+            S_V = |cy - gy| / gy
+
+    Args:
+        R_mask: uint8 mask, 255 = foreground (R), 0 = background
+        grayscale_image: grayscale image (used only for shape)
+
+    Returns:
+        (Q2, cx, cy, S_H, S_V)
+    """
+
+    if R_mask is None or grayscale_image is None:
+        return 0, None, None, None, None
+
+    if R_mask.shape != grayscale_image.shape:
+        raise ValueError("R_mask and grayscale_image must have the same shape")
+
+    H, W = grayscale_image.shape
+    gx, gy = W / 2.0, H / 2.0  # geometric center
+
+    # Foreground pixels
+    fg = (R_mask == 255)
+    if np.count_nonzero(fg) == 0:
+        # Veto: invalid R
+        return 0, None, None, None, None
+
+    # Compute centroid (cx, cy) of foreground region R
+    # Using image moments on a 0/1 mask is stable.
+    fg_u8 = fg.astype(np.uint8)
+    m = cv2.moments(fg_u8, binaryImage=True)
+    if m["m00"] == 0:
+        return 0, None, None, None, None
+
+    cx = m["m10"] / m["m00"]
+    cy = m["m01"] / m["m00"]
+
+    # Normalized offsets
+    # Avoid division by zero if gx or gy are 0 (degenerate images)
+    if gx == 0 or gy == 0:
+        return 0, cx, cy, None, None
+
+    S_H = abs(cx - gx) / gx
+    S_V = abs(cy - gy) / gy
+    r = float(np.sqrt(S_H**2 + S_V**2))
+
+    Q2 = int(round((1.0 - r) * 100.0))
+    Q2 = max(0, min(100, Q2))
+
+    return Q2, float(cx), float(cy), float(S_H), float(S_V)
+
+
