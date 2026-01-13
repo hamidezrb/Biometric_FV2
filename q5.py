@@ -35,45 +35,45 @@ def _shannon_entropy(values: np.ndarray, bit_depth: int = 8) -> float:
     H = -np.sum(p[nz] * np.log2(p[nz]))
     return float(H)
 
-def calculate_q5(R_mask: np.ndarray,
-                 Grayscale_Image: np.ndarray,
-                 bit_depth: int = 8,
-                 scale: float = 0.75) -> Tuple[int, float]:
-    """
-    Q5 — Information Entropy (inside foreground region R).
+# def calculate_q5(R_mask: np.ndarray,
+#                  Grayscale_Image: np.ndarray,
+#                  bit_depth: int = 8,
+#                  scale: float = 0.75) -> Tuple[int, float]:
+#     """
+#     Q5 — Information Entropy (inside foreground region R).
 
-    Args:
-        R_mask: binary mask, 255=foreground, 0=background  (from Q1)
-        Grayscale_Image: original grayscale image
-        bit_depth: image bit depth (default 8)
-        scale: optional ISO scaling factor (default 0.75)
+#     Args:
+#         R_mask: binary mask, 255=foreground, 0=background  (from Q1)
+#         Grayscale_Image: original grayscale image
+#         bit_depth: image bit depth (default 8)
+#         scale: optional ISO scaling factor (default 0.75)
 
-    Returns:
-        (Q5_score, H_bits)
-    """
-    # Veto: invalid or empty foreground region
-    fg = (R_mask == 255)
-    N = int(np.sum(fg))
-    if N == 0:
-        return 0, 0.0
+#     Returns:
+#         (Q5_score, H_bits)
+#     """
+#     # Veto: invalid or empty foreground region
+#     fg = (R_mask == 255)
+#     N = int(np.sum(fg))
+#     if N == 0:
+#         return 0, 0.0
 
-    # Collect pixel values within R (uint8 expected for 8-bit images)
-    vals = Grayscale_Image[fg].astype(np.uint8)
+#     # Collect pixel values within R (uint8 expected for 8-bit images)
+#     vals = Grayscale_Image[fg].astype(np.uint8)
 
-    # Shannon entropy in bits
-    H_bits = _shannon_entropy(vals, bit_depth=bit_depth)
+#     # Shannon entropy in bits
+#     H_bits = _shannon_entropy(vals, bit_depth=bit_depth)
 
-    # Normalize to [0, 100] and apply optional ISO scale
-    q5_raw = (H_bits / float(bit_depth)) * 100.0 * float(scale)
-    Q5 = int(round(q5_raw))
-    Q5 = max(0, min(100, Q5))
-    return Q5, H_bits
+#     # Normalize to [0, 100] and apply optional ISO scale
+#     q5_raw = (H_bits / float(bit_depth)) * 100.0 * float(scale)
+#     Q5 = int(round(q5_raw))
+#     Q5 = max(0, min(100, Q5))
+#     return Q5, H_bits
 
 
 
 # ******************************ISO-aligned*************************************
 
-def calculate_q5_ISO(
+def calculate_q5(
     R_mask: np.ndarray,
     Grayscale_Image: np.ndarray,
     bit_depth: int = 8,
