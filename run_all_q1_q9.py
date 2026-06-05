@@ -8,7 +8,9 @@ from tabulate import tabulate
 from q1 import calculate_q1
 from q2 import calculate_q2
 from q3 import calculate_q3
+from q4 import calculate_q4
 from q5 import calculate_q5
+from q6 import calculate_q6
 from q7 import calculate_q7
 
 # ISO-aligned versions:
@@ -17,6 +19,18 @@ from q7 import calculate_q7
 from q8 import calculate_q8
 from q9 import calculate_q9
 import vessel_utils
+from unified_quality import (
+    DEFAULT_POWER_COEFFICIENTS,
+    evaluate_unified_quality,
+    format_power_coefficients,
+)
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_TEST_IMAGE_DIRS = (
+    os.path.join(SCRIPT_DIR, "test_images", "high_quality"),
+    os.path.join(SCRIPT_DIR, "test_images", "low_quality"),
+)
+DEFAULT_VEIN_ROOT = os.path.join(SCRIPT_DIR, "debug_openvein_features", "RLT")
 
 
 def ensure_dir(path: str):
@@ -30,27 +44,18 @@ def overlay_mask(gray: np.ndarray, mask255: np.ndarray) -> np.ndarray:
     vis[fg] = (0.6 * vis[fg] + 0.4 * np.array([0, 255, 0])).astype(np.uint8)
     return vis
 
-def transition_count_8nbr(skel01: np.ndarray, y: int, x: int) -> int:
-    """Count 0<->1 transitions around the 8-neighborhood (ISO rule)."""
-    p2 = skel01[y - 1, x]
-    p3 = skel01[y - 1, x + 1]
-    p4 = skel01[y, x + 1]
-    p5 = skel01[y + 1, x + 1]
-    p6 = skel01[y + 1, x]
-    p7 = skel01[y + 1, x - 1]
-    p8 = skel01[y, x - 1]
-    p9 = skel01[y - 1, x - 1]
-    seq = [p2, p3, p4, p5, p6, p7, p8, p9, p2]
-    return int(sum(seq[i] != seq[i + 1] for i in range(8)))
-
-def get_endpoints_intersections(skel01: np.ndarray):
+def get_endpoints_intersections(skel01: np.ndarray, foreground_mask=None):
     """Return lists of (x,y) endpoints and intersections from a 0/1 skeleton."""
+    from q9 import transition_count_8nbr
+
     H, W = skel01.shape
+    if foreground_mask is None:
+        foreground_mask = np.ones((H, W), dtype=bool)
     endpoints = []
     intersections = []
-    for y in range(1, H - 1):
-        for x in range(1, W - 1):
-            if skel01[y, x] != 1:
+    for y in range(H):
+        for x in range(W):
+            if not foreground_mask[y, x] or skel01[y, x] != 1:
                 continue
             T = transition_count_8nbr(skel01, y, x)
             if T == 2:
@@ -93,12 +98,18 @@ def run_on_image(image_path: str, vein_root: str, out_dir: str):
     Q2, cx, cy, S_H, S_V = calculate_q2(R_mask, gray)
 
     # --- Q3 + Q4 + Q6  (disable q8 inside q3 if your q3 bundles it)
-    Q3, Q4, Q6, _dummy_q8, sigma, g_mean, N100, _dummy_nv = calculate_q3(
-        R_mask, gray, Sunocc, include_q8=False
-    )
+    # Q3, Q4, Q6, _dummy_q8, sigma, g_mean, N100, _dummy_nv = calculate_q3(
+    #     R_mask, gray, Sunocc, include_q8=False
+    # )
+    
+    
+    Q3, sigma, g_mean = calculate_q3(R_mask, gray)
+    Q4, sigma, g_mean = calculate_q4(R_mask, gray)
+    Q5, H_bits = calculate_q5(R_mask, gray, bit_depth=8, ep_c=0.75)
+    Q6, N100 = calculate_q6(R_mask, gray, S_unoccluded=Sunocc, gc=0.006)
 
     # --- Q5
-    Q5, H_bits = calculate_q5(R_mask, gray, bit_depth=8, ep_c=0.75)
+    # Q5, H_bits = calculate_q5(R_mask, gray, bit_depth=8, ep_c=0.75)
 
     # --- Q7
     Q7, block_var = calculate_q7(R_mask, gray, g_mean)
@@ -123,26 +134,12 @@ def run_on_image(image_path: str, vein_root: str, out_dir: str):
     # Use the same thinning algorithm used in Q8/Q9
     skel_raw = vessel_utils.zs_thinning(raw_binary)
 
-    # Determine Q8/Q9 parameters based on the method (MC vs others)
-    method = os.path.basename(os.path.normpath(vein_root)).upper()
-
-    if method == "MC":
-        params = dict(min_area=30, prune_iters=8, min_skel_len=0, keep_largest=False)
-    else:
-        params = dict(min_area=120, prune_iters=30, min_skel_len=120, keep_largest=True)
-    # --- Q8 (ISO): total vascular length
-    # Finger second phalanx -> Lc = 600 (Table 2 in the draft)
-    Q8, N_vessel, skel_q8 = calculate_q8(R_mask, vein_img, Lc=600, **params)
-    # --- Q9 (ISO): number of feature points
-    # Finger second phalanx -> Fc = 15 (Table 3 in the draft)
-    Q9, N_fp, N_end, N_int, skel_q9 = calculate_q9(R_mask, vein_img, Fc=15, **params)
-    
-    
-    # Q8, N_vessel, skel_q8 = calculate_q8(R_mask, vein_img, Lc=600)
-    # Q9, N_fp, N_end, N_int, skel_q9 = calculate_q9(R_mask, vein_img, Fc=15)
+    # --- Q8 / Q9 (ISO-minimal skeleton path; no per-dataset tuning)
+    Q8, N_vessel, skel_q8 = calculate_q8(R_mask, vein_img)
+    Q9, N_fp, N_end, N_int, skel_q9 = calculate_q9(R_mask, vein_img)
     
     # For visualization/debugging: extract endpoint and intersection coordinates from the skeleton
-    end_pts, int_pts = get_endpoints_intersections(skel_q9)
+    end_pts, int_pts = get_endpoints_intersections(skel_q9, R_mask == 255)
     q9_points_vis = visualize_feature_points_iso_style(skel_q9, end_pts, int_pts)
 
     # --- Save debug images
@@ -163,6 +160,12 @@ def run_on_image(image_path: str, vein_root: str, out_dir: str):
     # endpoints (red circles) + intersections (red squares)
     cv2.imwrite(os.path.join(out_dir, f"{base}_q9_points_vis.png"), q9_points_vis)
 
+    qi = {
+        "Q1": Q1, "Q2": Q2, "Q3": Q3, "Q4": Q4, "Q5": Q5,
+        "Q6": Q6, "Q7": Q7, "Q8": Q8, "Q9": Q9,
+    }
+    unified = evaluate_unified_quality(qi, DEFAULT_POWER_COEFFICIENTS)
+
     result = {
         "file": base,
         "Q1": Q1, "Sunocc": Sunocc,
@@ -174,21 +177,43 @@ def run_on_image(image_path: str, vein_root: str, out_dir: str):
         "Q7": Q7,
         "Q8": Q8, "N_vessel": int(N_vessel),
         "Q9": Q9, "N_fp": int(N_fp), "N_end": int(N_end), "N_int": int(N_int),
+        "unified_quality_score": unified["unified_quality_score"],
+        "power_coefficients": unified["power_coefficients"],
         "vein_map": vein_path,
-        "debug_dir": out_dir
+        "debug_dir": out_dir,
     }
     return result
+
+
+def collect_default_image_paths() -> list[str]:
+    paths: list[str] = []
+    for folder in DEFAULT_TEST_IMAGE_DIRS:
+        if os.path.isdir(folder):
+            paths.extend(sorted(glob.glob(os.path.join(folder, "*.*"))))
+    return paths
 
 
 def main():
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", required=True, help="Path to an image OR a folder of images")
-    ap.add_argument("--vein_root", required=True, help="Root folder containing MATLAB vein maps (e.g., debug_openvein_features)")
+    ap.add_argument(
+        "--input",
+        default=None,
+        help="Path to an image OR a folder of images (default: all test_images/*)",
+    )
+    ap.add_argument(
+        "--vein_root",
+        default=DEFAULT_VEIN_ROOT,
+        help="Folder with MATLAB vein maps for one extractor (default: debug_openvein_features/RLT)",
+    )
     ap.add_argument("--out", default="debug_outputs", help="Where to save debug images")
     args = ap.parse_args()
 
-    if os.path.isdir(args.input):
+    if args.input is None:
+        paths = collect_default_image_paths()
+        if not paths:
+            ap.error("No default test images found under test_images/")
+    elif os.path.isdir(args.input):
         paths = sorted(glob.glob(os.path.join(args.input, "*.*")))
     else:
         paths = [args.input]
@@ -196,7 +221,13 @@ def main():
     ensure_dir(args.out)
 
     all_results = []
-    headers = ["image", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "N_vessel", "N_end", "N_int", "N_fp"]
+
+    headers = [
+        "image",
+        "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9",
+        "unified_quality_score",
+        "N_vessel", "N_end", "N_int", "N_fp",
+    ]
     for p in paths:
         try:
             r = run_on_image(p, args.vein_root, args.out)
@@ -210,11 +241,27 @@ def main():
             r["file"],
             r["Q1"], r["Q2"], r["Q3"], r["Q4"], r["Q5"],
             r["Q6"], r["Q7"], r["Q8"], r["Q9"],
-            r["N_vessel"], r["N_end"], r["N_int"], r["N_fp"]
+            r["unified_quality_score"],
+            r["N_vessel"], r["N_end"], r["N_int"], r["N_fp"],
         ])
 
+    coeffs = (
+        all_results[0]["power_coefficients"]
+        if all_results
+        else DEFAULT_POWER_COEFFICIENTS
+    )
+
     print("\nQUALITY SCORES (ISO/IEC 29794-9)\n")
-    print(tabulate(table, headers=headers, tablefmt="github"))
+    print("Power coefficients α_i (ISO 5.3):")
+    print(f"  {format_power_coefficients(coeffs)}")
+    if coeffs == DEFAULT_POWER_COEFFICIENTS:
+        print("  (placeholder 1/9 each — TODO: import calibrated α_i from ISO reference implementation)\n")
+    else:
+        print()
+    if table:
+        print(tabulate(table, headers=headers, tablefmt="github"))
+    else:
+        print("No images processed successfully.")
 
 if __name__ == "__main__":
     main()

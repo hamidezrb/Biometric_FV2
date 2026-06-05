@@ -33,7 +33,13 @@ def remove_small_components(binary01: np.ndarray, min_area: int) -> np.ndarray:
 
 
 def zs_thinning(binary01: np.ndarray) -> np.ndarray:
-    """Zhang–Suen thinning. Input/Output are 0/1 uint8."""
+    """
+    Zhang–Suen thinning (0/1 uint8 in and out).
+
+    ISO/IEC 29794-9 Clause 5.2.8 Step b) cites thinning per reference [5].
+    TODO: Confirm normative [5] in the published standard matches Zhang–Suen;
+    this implementation is used for both Q8 and Q9 when iso_minimal=True.
+    """
     img = (binary01 > 0).astype(np.uint8)
     if img.size == 0:
         return img
@@ -56,7 +62,6 @@ def zs_thinning(binary01: np.ndarray) -> np.ndarray:
         changed = False
         to_remove = []
 
-        # step 1
         for y in range(1, H - 1):
             for x in range(1, W - 1):
                 if img[y, x] != 1:
@@ -81,8 +86,6 @@ def zs_thinning(binary01: np.ndarray) -> np.ndarray:
             changed = True
 
         to_remove = []
-
-        # step 2
         for y in range(1, H - 1):
             for x in range(1, W - 1):
                 if img[y, x] != 1:
@@ -134,7 +137,28 @@ def remove_short_skeleton_components(skel01: np.ndarray, min_len: int) -> np.nda
     return out
 
 
-def prepare_vessel_skeleton(
+def _prepare_vessel_skeleton_iso(
+    R_mask: np.ndarray,
+    vein_img_or_path: Union[str, np.ndarray],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    ISO Clause 5.2.8/5.2.9 Steps b–c: binarize vessels within R, thin to 1 px.
+
+    Vessel map is binarized as (vein > 0) ∧ R, stored as 0/1 (not 255).
+    TODO: The draft does not define how to derive the vessel map from the
+    vascular image; callers may supply an external binarized vein map.
+    """
+    fg = (R_mask == 255)
+    vessel = load_gray(vein_img_or_path)
+    if vessel.shape != R_mask.shape:
+        raise ValueError(f"Shape mismatch: vessel={vessel.shape} vs R_mask={R_mask.shape}")
+
+    vessel01 = ((vessel > 0) & fg).astype(np.uint8)
+    skel01 = zs_thinning(vessel01)
+    return vessel01, skel01
+
+
+def _prepare_vessel_skeleton_advanced(
     R_mask: np.ndarray,
     vein_img_or_path: Union[str, np.ndarray],
     *,
@@ -142,35 +166,53 @@ def prepare_vessel_skeleton(
     close_ksize: int = 3,
     keep_largest: bool = True,
     prune_iters: int = 30,
-    min_skel_len: int = 120
+    min_skel_len: int = 120,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Returns (vessel01, skel01), both 0/1 uint8 and aligned to R_mask.
-    """
+    """Non-ISO optional cleanup (disabled by default in the public API)."""
     fg = (R_mask == 255)
     vessel = load_gray(vein_img_or_path)
-
     if vessel.shape != R_mask.shape:
         raise ValueError(f"Shape mismatch: vessel={vessel.shape} vs R_mask={R_mask.shape}")
 
     v = ((vessel > 0) & fg).astype(np.uint8)
-
-    # remove tiny components
     clean = remove_small_components(v, min_area=min_area)
-
-    # close small gaps
     if close_ksize and close_ksize > 1:
         kernel = np.ones((close_ksize, close_ksize), np.uint8)
         clean = cv2.morphologyEx(clean, cv2.MORPH_CLOSE, kernel)
-
-    # optionally keep main network
     vessel01 = keep_largest_component(clean) if keep_largest else clean
-
-    # thin + prune
     skel01 = zs_thinning(vessel01)
     if prune_iters and prune_iters > 0:
         skel01 = prune_spurs(skel01, iterations=prune_iters)
     if min_skel_len and min_skel_len > 1:
         skel01 = remove_short_skeleton_components(skel01, min_len=min_skel_len)
-
     return vessel01, skel01
+
+
+def prepare_vessel_skeleton(
+    R_mask: np.ndarray,
+    vein_img_or_path: Union[str, np.ndarray],
+    *,
+    iso_minimal: bool = True,
+    min_area: int = 120,
+    close_ksize: int = 3,
+    keep_largest: bool = True,
+    prune_iters: int = 30,
+    min_skel_len: int = 120,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Returns (vessel01, skel01), both 0/1 uint8 aligned to R_mask.
+
+    iso_minimal=True (default): ISO path — binarize within R and thin only.
+    iso_minimal=False: optional non-ISO morphology/pruning (debug only).
+    """
+    if iso_minimal:
+        return _prepare_vessel_skeleton_iso(R_mask, vein_img_or_path)
+    return _prepare_vessel_skeleton_advanced(
+        R_mask,
+        vein_img_or_path,
+        min_area=min_area,
+        close_ksize=close_ksize,
+        keep_largest=keep_largest,
+        prune_iters=prune_iters,
+        min_skel_len=min_skel_len,
+    )

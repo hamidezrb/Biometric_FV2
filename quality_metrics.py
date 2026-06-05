@@ -388,68 +388,22 @@ def create_low_vessel_density_image(width: int, height: int, output_path: str, t
     print(f"Created low vessel density test image: {output_path} (target pixels: {target_pixels})")
 
 
-def _sobel_4dir(gray: np.ndarray) -> np.ndarray:
-    """
-    Compute Sobel responses in four directions (0°, 45°, 90°, 135°) and average magnitudes.
-    """
-    if gray.dtype != np.float32:
-        gray_f = gray.astype(np.float32)
-    else:
-        gray_f = gray
+def calculate_q6(
+    R_mask: np.ndarray,
+    Grayscale_Image: np.ndarray,
+    S_unoccluded: int,
+    gc: float = 0.006,
+    threshold: int = 100,
+) -> Tuple[int, int]:
+    """Delegate to canonical q6.py (ISO Clause 5.2.6)."""
+    from q6 import calculate_q6 as _calculate_q6
 
-    gx = cv2.Sobel(gray_f, cv2.CV_32F, 1, 0, ksize=3)
-    gy = cv2.Sobel(gray_f, cv2.CV_32F, 0, 1, ksize=3)
-
-    k45 = np.array([[0, 1, 2],
-                    [-1, 0, 1],
-                    [-2, -1, 0]], dtype=np.float32)
-    k135 = np.array([[2, 1, 0],
-                     [1, 0, -1],
-                     [0, -1, -2]], dtype=np.float32)
-
-    g45 = cv2.filter2D(gray_f, cv2.CV_32F, k45)
-    g135 = cv2.filter2D(gray_f, cv2.CV_32F, k135)
-
-    w_mean = (np.abs(gx) + np.abs(gy) + np.abs(g45) + np.abs(g135)) / 4.0
-    return w_mean
-
-
-def calculate_q6(R_mask: np.ndarray,
-                 Grayscale_Image: np.ndarray,
-                 S_unoccluded: int,
-                 gc: float = 0.006,
-                 threshold: int = 100) -> Tuple[int, int]:
-    """
-    Calculate Q6 (Sharpness) following ISO/IEC 29794-9 Clause 5.2.6.
-
-    Returns (Q6_score, N100) where N100 is the count of normalized edge responses > threshold.
-    """
-    foreground = (R_mask == 255)
-    if S_unoccluded <= 0 or np.count_nonzero(foreground) == 0:
-        return 0, 0
-
-    gray = Grayscale_Image
-    if gray.dtype != np.uint8:
-        gray = gray.astype(np.uint8)
-
-    w_mean = _sobel_4dir(gray)
-    min_val = float(w_mean.min())
-    max_val = float(w_mean.max())
-    if max_val > min_val:
-        w_norm = (w_mean - min_val) * (255.0 / (max_val - min_val))
-    else:
-        w_norm = np.zeros_like(w_mean, dtype=np.float32)
-
-    strong_edges_mask = (w_norm > threshold) & foreground
-    N100 = int(np.count_nonzero(strong_edges_mask))
-
-    denominator = gc * S_unoccluded
-    if denominator <= 0:
-        return 0, N100
-
-    q6_raw = (N100 / denominator) * 100.0
-    Q6_score = int(round(q6_raw))
-    Q6_score = max(0, min(100, Q6_score))
-    return Q6_score, N100
+    return _calculate_q6(
+        R_mask,
+        Grayscale_Image,
+        S_unoccluded=S_unoccluded,
+        gc=gc,
+        threshold=threshold,
+    )
 
 

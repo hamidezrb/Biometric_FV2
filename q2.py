@@ -1,13 +1,14 @@
+"""
+ISO/IEC 29794-9 Quality Component 2 (Offset Complement) — Clause 5.2.2.
 
-# Offset Complement
-"""The offset complement of a vascular image is a centering score that quantifies
-how close the foreground region centroid is to the image geometric center. 
-It is computed from normalized horizontal and vertical centroid offsets on the image plane."""
+Uses foreground R from Q1 only (no separate foreground extraction).
+"""
 
 import cv2
 import numpy as np
 from typing import Tuple, Optional
 
+# Legacy standalone extraction (not used by the ISO pipeline):
 # def calculate_q2(image_path: str) -> Tuple[int, Optional[float], Optional[float], Optional[float], Optional[float]]:
 #     """
 #     ISO/IEC 29794-9 Quality Component Q2 – Offset Complement (Centering)
@@ -123,8 +124,8 @@ def calculate_q2(
     S_V = abs(cy - gy) / gy
     r = float(np.sqrt(S_H**2 + S_V**2))
 
-    Q2 = int(round((1.0 - r) * 100.0))
-    Q2 = max(0, min(100, Q2))
+    # ISO offset-complement score in [0, 100]: round, cap at 100, floor at 0.
+    Q2 = max(0, min(100, int(round((1.0 - r) * 100.0))))
 
     return Q2, float(cx), float(cy), float(S_H), float(S_V)
 
