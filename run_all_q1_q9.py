@@ -252,10 +252,10 @@ def main():
     )
 
     print("\nQUALITY SCORES (ISO/IEC 29794-9)\n")
-    print("Power coefficients α_i (ISO 5.3):")
+    print("Power coefficients w_i (ISO 5.3):")
     print(f"  {format_power_coefficients(coeffs)}")
     if coeffs == DEFAULT_POWER_COEFFICIENTS:
-        print("  (placeholder 1/9 each — TODO: import calibrated α_i from ISO reference implementation)\n")
+        print("  (placeholder 1/9 each — TODO: import calibrated w_i from ISO reference implementation)\n")
     else:
         print()
     if table:
