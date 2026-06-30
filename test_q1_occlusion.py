@@ -85,13 +85,15 @@ class TestQ1Formula1WithOcclusion(unittest.TestCase):
 
 class TestQ1Integration(unittest.TestCase):
     def test_low_quality_image_path_if_present(self):
-        path = os.path.join(
-            "test_images", "low_quality", "PLUS-FV3-Laser_PALMAR_018_01_04_01.png"
-        )
-        if not os.path.isfile(path):
-            self.skipTest("reference image not available")
+        from vascular_quality.common.paths import finger_vein_image_dir
 
-        result = calculate_q1_detailed(path, capture_site=CaptureSite.FINGER_SECOND_PHALANX)
+        path = finger_vein_image_dir("PLUS", "low_quality") / (
+            "PLUS-FV3-Laser_PALMAR_018_01_04_01.png"
+        )
+        if not path.is_file():
+            self.skipTest(f"reference image not available: {path}")
+
+        result = calculate_q1_detailed(str(path), capture_site=CaptureSite.FINGER_SECOND_PHALANX)
         self.assertNotEqual(result.S_foreground, result.S_unoccluded)
         self.assertLess(result.Q1_score, compute_q1_score(result.S_foreground, result.Sc))
         self.assertNotEqual(result.Q1_score, 100)

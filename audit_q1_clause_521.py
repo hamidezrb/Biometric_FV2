@@ -13,9 +13,16 @@ from __future__ import annotations
 
 import argparse
 import csv
-import glob
 import os
 from typing import Dict, List, Tuple
+from vascular_quality.common.images import list_images_in_dir
+from vascular_quality.common.paths import (
+    DEFAULT_OPENVEIN_EXTRACTOR,
+    finger_vein_image_dir,
+    openvein_vein_map_dir,
+    iter_quality_classes,
+)
+from vascular_quality.finger_vein.config import FINGER_VEIN_DATASETS
 
 import cv2
 import numpy as np
@@ -167,26 +174,46 @@ def audit_image(
     return row
 
 
-def collect_image_paths(input_path: str | None) -> List[str]:
+def collect_image_paths(
+    input_path: str | None,
+    dataset: str = "PLUS",
+    quality: str = "all",
+) -> List[str]:
     if input_path is None:
         paths: List[str] = []
-        for folder in ("test_images/high_quality", "test_images/low_quality"):
-            if os.path.isdir(folder):
-                paths.extend(sorted(glob.glob(os.path.join(folder, "*.*"))))
+        for q in iter_quality_classes(quality):
+            folder = finger_vein_image_dir(dataset, q)
+            paths.extend(str(p) for p in list_images_in_dir(folder))
         return paths
     if os.path.isdir(input_path):
-        return sorted(glob.glob(os.path.join(input_path, "*.*")))
+        return [str(p) for p in list_images_in_dir(input_path)]
     return [input_path]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Q1 Clause 5.2.1 compliance audit")
     parser.add_argument("--input", default=None, help="Image file or folder")
+    parser.add_argument(
+        "--dataset",
+        default="PLUS",
+        choices=list(FINGER_VEIN_DATASETS),
+        help="Finger-vein dataset when --input omitted.",
+    )
+    parser.add_argument(
+        "--quality",
+        default="all",
+        choices=["high_quality", "low_quality", "all"],
+    )
+    parser.add_argument(
+        "--extractor",
+        default=DEFAULT_OPENVEIN_EXTRACTOR,
+        help="OpenVein submodel for vein maps.",
+    )
     parser.add_argument("--out", default="debug_outputs_q1_audit", help="Debug output directory")
     parser.add_argument(
-        "--vein_root",
-        default="debug_openvein_features/RLT",
-        help="Folder with vein maps for Q8/Q9 comparison",
+        "--vein-root",
+        default=None,
+        help="Vein-map folder (default: debug_openvein_features/{dataset}/{quality}/{extractor}).",
     )
     parser.add_argument(
         "--capture-site",
@@ -197,9 +224,17 @@ def main() -> None:
     args = parser.parse_args()
 
     capture_site = CaptureSite(args.capture_site)
-    paths = collect_image_paths(args.input)
+    paths = collect_image_paths(args.input, dataset=args.dataset, quality=args.quality)
     if not paths:
-        parser.error("No images found")
+        parser.error(
+            "No images found. Pass --input or add images under "
+            f"data/finger_vein/{args.dataset}/{{high_quality,low_quality}}/"
+        )
+
+    quality_for_vein = args.quality if args.quality != "all" else "high_quality"
+    vein_root = args.vein_root or str(
+        openvein_vein_map_dir(args.dataset, quality_for_vein, args.extractor)
+    )
 
     ensure_dir(args.out)
     rows: List[Dict[str, object]] = []
@@ -210,7 +245,7 @@ def main() -> None:
 
     for path in paths:
         try:
-            row = audit_image(path, args.out, args.vein_root, capture_site)
+            row = audit_image(path, args.out, vein_root, capture_site)
             rows.append(row)
             print(f"=== {row['file']} ===")
             print(f"  Compliance (effective = fg - occ): {row['compliance']}")

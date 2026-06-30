@@ -18,7 +18,7 @@ from iso_constants import CaptureSite, DEFAULT_CAPTURE_SITE, get_capture_site_co
 
 from iso_foreground import is_foreground_region_valid
 
-from vessel_utils import prepare_vessel_skeleton
+from vessel_utils import OpenVeinVesselCleanupConfig, prepare_vessel_skeleton
 
 
 
@@ -94,7 +94,15 @@ def calculate_q8(
 
     *,
 
-    iso_minimal: bool = False,
+    iso_minimal: bool = True,
+
+    vein_map_source: str = "iso",
+
+    R_unoccluded: Optional[np.ndarray] = None,
+
+    openvein_cleanup: Optional[OpenVeinVesselCleanupConfig] = None,
+
+    skel01: Optional[np.ndarray] = None,
 
 ) -> Tuple[int, int, np.ndarray]:
 
@@ -132,11 +140,23 @@ def calculate_q8(
 
 
 
-    _, skel01 = prepare_vessel_skeleton(
+    if skel01 is None:
 
-        R_mask, vein_img_or_path, iso_minimal=iso_minimal
+        _, skel01 = prepare_vessel_skeleton(
 
-    )
+            R_mask,
+
+            vein_img_or_path,
+
+            iso_minimal=iso_minimal,
+
+            vein_map_source=vein_map_source,
+
+            R_unoccluded=R_unoccluded,
+
+            openvein_cleanup=openvein_cleanup,
+
+        )
 
 
 

@@ -1,7 +1,15 @@
-import os
-import glob
+"""
+Run ISO Q1–Q7 on vascular images (no Q8/Q9 / unified score).
+
+For full Q1–Q9 use run_finger_vein_experiment.py or run_all_q1_q9.py.
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
 import cv2
-import numpy as np
 from tabulate import tabulate
 
 from q1 import calculate_q1
@@ -11,43 +19,32 @@ from q4 import calculate_q4
 from q5 import calculate_q5
 from q6 import calculate_q6
 from q7 import calculate_q7
+from vascular_quality.common.images import list_images_in_dir
+from vascular_quality.common.paths import ensure_dir, finger_vein_image_dir, iter_quality_classes
+from vascular_quality.common.visualization import overlay_mask
+from vascular_quality.finger_vein.config import DEFAULT_CAPTURE_SITE, FINGER_VEIN_DATASETS
 
 
-def ensure_dir(path: str):
-    os.makedirs(path, exist_ok=True)
-
-
-def overlay_mask(gray: np.ndarray, mask255: np.ndarray) -> np.ndarray:
-    vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-    fg = (mask255 == 255)
-    vis[fg] = (0.6 * vis[fg] + 0.4 * np.array([0, 255, 0])).astype(np.uint8)
-    return vis
-
-
-def run_on_image(image_path: str, out_dir: str):
+def run_on_image(image_path: Path, out_dir: Path) -> dict:
     ensure_dir(out_dir)
-    base = os.path.splitext(os.path.basename(image_path))[0]
+    base = image_path.stem
 
-    # Q1
-    Q1, Sunocc, R_mask, gray = calculate_q1(image_path)
-
-    # Q2
-    Q2, cx, cy, S_H, S_V = calculate_q2(R_mask, gray)
-
+    Q1, Sunocc, R_mask, gray = calculate_q1(
+        str(image_path),
+        capture_site=DEFAULT_CAPTURE_SITE,
+    )
+    Q2, _, _, _, _ = calculate_q2(R_mask, gray)
     Q3, sigma, g_mean = calculate_q3(R_mask, gray)
-    Q4, sigma, g_mean = calculate_q4(R_mask, gray)
-    Q5, H_bits = calculate_q5(R_mask, gray, bit_depth=8, ep_c=0.75)
-    Q6, N100 = calculate_q6(R_mask, gray, S_unoccluded=Sunocc, gc=0.006)
-
-    # Q7
+    Q4, _, _ = calculate_q4(R_mask, gray)
+    Q5, _ = calculate_q5(R_mask, gray, bit_depth=8, ep_c=0.75)
+    Q6, _ = calculate_q6(R_mask, gray, S_unoccluded=Sunocc, gc=0.006)
     Q7, block_var = calculate_q7(R_mask, gray, g_mean)
 
-    # Save debug images
-    cv2.imwrite(os.path.join(out_dir, f"{base}_gray.png"), gray)
-    cv2.imwrite(os.path.join(out_dir, f"{base}_Rmask.png"), R_mask)
-    cv2.imwrite(os.path.join(out_dir, f"{base}_overlay_R.png"), overlay_mask(gray, R_mask))
+    cv2.imwrite(str(out_dir / f"{base}_gray.png"), gray)
+    cv2.imwrite(str(out_dir / f"{base}_Rmask.png"), R_mask)
+    cv2.imwrite(str(out_dir / f"{base}_overlay_R.png"), overlay_mask(gray, R_mask))
 
-    result = {
+    return {
         "file": base,
         "Q1": int(Q1),
         "Q2": int(Q2),
@@ -57,75 +54,63 @@ def run_on_image(image_path: str, out_dir: str):
         "Q6": int(Q6),
         "Q7": int(Q7),
         "block_var": float(block_var),
-        "debug_dir": out_dir,
+        "debug_dir": str(out_dir),
     }
-    return result
 
 
-def main():
-    import argparse
+def main() -> int:
+    parser = argparse.ArgumentParser(description="ISO Q1–Q7 pipeline")
+    parser.add_argument("--input", default=None, help="Image file or folder")
+    parser.add_argument(
+        "--dataset",
+        default="PLUS",
+        choices=list(FINGER_VEIN_DATASETS),
+        help="Dataset when --input omitted (default: PLUS).",
+    )
+    parser.add_argument(
+        "--quality",
+        default="all",
+        choices=["high_quality", "low_quality", "all"],
+    )
+    parser.add_argument(
+        "--out",
+        default="debug_outputs_q1_q7",
+        help="Debug output directory",
+    )
+    args = parser.parse_args()
 
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--input", required=True, help="Path to an image OR a folder of images")
-    ap.add_argument("--out", default="debug_outputs_q1_q7", help="Where to save debug images")
-    args = ap.parse_args()
-
-    if os.path.isdir(args.input):
-        paths = sorted(glob.glob(os.path.join(args.input, "*.*")))
+    if args.input:
+        if Path(args.input).is_dir():
+            paths = list_images_in_dir(args.input)
+        else:
+            paths = [Path(args.input)]
     else:
-        paths = [args.input]
+        paths = []
+        for q in iter_quality_classes(args.quality):
+            paths.extend(list_images_in_dir(finger_vein_image_dir(args.dataset, q)))
 
-    ensure_dir(args.out)
+    if not paths:
+        parser.error("No images found. Pass --input or populate data/finger_vein/.")
 
+    out_dir = ensure_dir(args.out)
     all_results = []
     for p in paths:
         try:
-            r = run_on_image(p, args.out)
-            all_results.append(r)
-        except Exception as e:
-            print(f"ERROR on {p}: {e}")
+            all_results.append(run_on_image(p, out_dir))
+        except Exception as exc:
+            print(f"ERROR on {p}: {exc}")
 
     headers = ["image", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7"]
-    table = []
-    
-    
-    table.append([
-            "PLUS-FV3-Laser_PALMAR_018_01_04_01",
-            58,
-            36,
-            19,
-            28,
-            48,
-            12,
-            42,
-        ])
-    
-    table.append([
-            "PLUS-FV3-Laser_PALMAR_026_01_02_01",
-            100,
-            50,
-            32,
-            69,
-            72,
-            20,
-            60,
-        ])
-    
-    # for r in all_results:
-    #     table.append([
-    #         r["file"],
-    #         r["Q1"],
-    #         r["Q2"],
-    #         r["Q3"],
-    #         r["Q4"],
-    #         r["Q5"],
-    #         r["Q6"],
-    #         r["Q7"],
-    #     ])
+    table = [[r["file"], r["Q1"], r["Q2"], r["Q3"], r["Q4"], r["Q5"], r["Q6"], r["Q7"]]
+             for r in all_results]
 
     print("\nQUALITY SCORES (ISO/IEC 29794-9) — Q1 to Q7\n")
-    print(tabulate(table, headers=headers, tablefmt="github"))
+    if table:
+        print(tabulate(table, headers=headers, tablefmt="github"))
+    else:
+        print("No images processed successfully.")
+    return 0 if all_results else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

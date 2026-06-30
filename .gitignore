@@ -73,7 +73,30 @@ Thumbs.db
 temp/
 tmp/
 
-# Test images (if any are generated)
-test_*.bmp
-test_*.jpg
-test_*.png
+# Dataset images and generated OpenVein features (not versioned)
+data/**/*.png
+data/**/*.jpg
+data/**/*.jpeg
+data/**/*.bmp
+data/**/*.tif
+data/**/*.tiff
+
+debug_openvein_features/**/*.png
+debug_openvein_features/**/*.jpg
+debug_openvein_features/**/*.jpeg
+debug_openvein_features/**/*.bmp
+debug_openvein_features/**/*.tif
+debug_openvein_features/**/*.tiff
+
+# Keep empty folder structure in Git
+!data/**/.gitkeep
+!debug_openvein_features/**/.gitkeep
+
+# Legacy paths and other generated outputs
+test_images/
+debug_outputs/
+debug_outputs_q1_q7/
+debug_outputs_q1_audit/
+debug_outputs_q1_verify/
+debug_outputs_q1_verify_018/
+results/

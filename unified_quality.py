@@ -74,6 +74,17 @@ DEFAULT_POWER_COEFFICIENTS: tuple[float, ...] = tuple(
 
 COEFFICIENTS_ARE_PLACEHOLDER = True
 
+UNIFIED_WEIGHT_LABEL = (
+    "experimental equal-weight baseline (alpha_i = 1/9 each; NOT normative ISO coefficients)"
+)
+
+
+def unified_weight_description() -> str:
+    """Human-readable description of unified-score weighting mode."""
+    if COEFFICIENTS_ARE_PLACEHOLDER:
+        return UNIFIED_WEIGHT_LABEL
+    return "calibrated ISO reference implementation coefficients"
+
 
 
 
