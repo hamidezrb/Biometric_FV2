@@ -133,19 +133,41 @@ python -m vascular_quality.openvein.pipeline --backend matlab --matlab-toolkit-r
 | **Required inputs** | Images in `data/finger_vein/{DATASET}/{quality}/`; PC maps in `debug_openvein_features/{DATASET}/{quality}/PC/{stem}.png` |
 | **Output** | `results/finger_vein/PC/q1_q9_pc_results.xlsx`, `.csv`, `q1_q9_pc_summary.xlsx`, `q1_q9_pc_log.txt` |
 
-Dry-run:
+**Debug images are off by default** (large runs). Enable with `--save-debug-images` → `debug_outputs/finger_vein/{DATASET}/{quality}/{image_stem}/`.
+
+Dry-run (check image and PC map counts before processing):
 
 ```powershell
-python run_finger_vein_experiment.py --extractor PC --datasets PLUS IDIAP SCUT --qualities high_quality low_quality --output results/finger_vein/PC --save-excel --dry-run
+python run_finger_vein_experiment.py --extractor PC --datasets PLUS IDIAP SCUT --qualities high_quality low_quality --output results/finger_vein/PC --save-excel --vessel-cleanup heuristic_default --dry-run
 ```
 
-Run experiment:
+Limited smoke test (first N images):
 
 ```powershell
-python run_finger_vein_experiment.py --extractor PC --datasets PLUS IDIAP SCUT --qualities high_quality low_quality --output results/finger_vein/PC --save-excel
+python run_finger_vein_experiment.py --extractor PC --datasets PLUS IDIAP SCUT --qualities high_quality low_quality --output results/finger_vein/PC_test --save-excel --vessel-cleanup heuristic_default --limit 30
 ```
 
-Export columns: `metric_modality`, `dataset`, `quality_folder`, `extractor`, `image_name`, `vessel_cleanup`, `Q1`–`Q9`, `unified_score`
+Full experiment (1000+ images):
+
+```powershell
+python run_finger_vein_experiment.py --extractor PC --datasets PLUS IDIAP SCUT --qualities high_quality low_quality --output results/finger_vein/PC --save-excel --vessel-cleanup heuristic_default
+```
+
+Optional debug PNGs (slower; uses significant disk space):
+
+```powershell
+python run_finger_vein_experiment.py --extractor PC --datasets PLUS --quality high_quality --output results/finger_vein/PC --save-excel --vessel-cleanup heuristic_default --save-debug-images
+```
+
+Export columns (no file paths):
+
+`metric_modality`, `dataset`, `quality_folder`, `extractor`, `image_name`, `vessel_cleanup`, `Q1`–`Q9`, `n_vessels`, `endpoints`, `intersections`, `unified_score`
+
+| Column | Meaning |
+|--------|---------|
+| `n_vessels` | Skeleton pixel count in foreground **R** used for Q8 (`N_vessel`) |
+| `endpoints` | Endpoint count in **R** used for Q9 (`N_end`) |
+| `intersections` | Intersection count in **R** used for Q9 (`N_int`) |
 
 Vessel cleanup preset (logged in CSV/Excel and experiment log):
 

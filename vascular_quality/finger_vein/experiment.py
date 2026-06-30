@@ -65,10 +65,14 @@ RESULT_COLUMNS: tuple[str, ...] = (
     "Q7",
     "Q8",
     "Q9",
+    "n_vessels",
+    "endpoints",
+    "intersections",
     "unified_score",
 )
 
 METRIC_COLS = [f"Q{i}" for i in range(1, 10)] + ["unified_score"]
+SKELETON_COLS = ("n_vessels", "endpoints", "intersections")
 
 PC_FEATURE_CMD = (
     'python -m vascular_quality.openvein.pipeline --backend matlab '
@@ -162,6 +166,9 @@ def _row_from_result(
         "Q7": result["Q7"],
         "Q8": result["Q8"],
         "Q9": result["Q9"],
+        "n_vessels": int(result["N_vessel"]),
+        "endpoints": int(result["N_end"]),
+        "intersections": int(result["N_int"]),
         "unified_score": result["unified_quality_score"],
     }
 
@@ -189,6 +196,9 @@ def _validate_result_df(df: pd.DataFrame, expected_rows: int) -> list[str]:
     warnings: list[str] = []
     if len(df) != expected_rows:
         warnings.append(f"Row count {len(df)} != expected {expected_rows}.")
+    dupes = df.duplicated(subset=["dataset", "quality_folder", "image_name"]).sum()
+    if dupes:
+        warnings.append(f"{int(dupes)} duplicate image row(s).")
     for col in METRIC_COLS:
         if col not in df.columns:
             warnings.append(f"Missing column {col}.")
@@ -201,6 +211,15 @@ def _validate_result_df(df: pd.DataFrame, expected_rows: int) -> list[str]:
         out = ((vals < 0) | (vals > 100)).sum()
         if out:
             warnings.append(f"{int(out)} value(s) in {col} outside [0, 100].")
+    for col in SKELETON_COLS:
+        if col not in df.columns:
+            warnings.append(f"Missing column {col}.")
+            continue
+        if df[col].isna().any():
+            warnings.append(f"NaN in {col}.")
+        vals = df[col].astype(int)
+        if (vals < 0).any():
+            warnings.append(f"Negative value(s) in {col}.")
     return warnings
 
 
@@ -376,6 +395,8 @@ def run_experiment(
     extractor: str,
     output_dir: Path,
     save_excel: bool = True,
+    save_debug_images: bool = False,
+    limit: int | None = None,
     openvein_cleanup: OpenVeinVesselCleanupConfig | None = None,
 ) -> ExperimentReport:
     extractor = _normalize_extractor(extractor)
@@ -386,7 +407,8 @@ def run_experiment(
     log.write(f"Unified score: {unified_weight_description()}\n")
     log.write(f"COEFFICIENTS_ARE_PLACEHOLDER={COEFFICIENTS_ARE_PLACEHOLDER}\n")
     log.write(f"Vessel cleanup preset: {cleanup.preset_name}\n")
-    log.write(f"Vessel cleanup config: {cleanup.summary()}\n\n")
+    log.write(f"Vessel cleanup config: {cleanup.summary()}\n")
+    log.write(f"Save debug images: {save_debug_images}\n\n")
 
     dry = run_dry_run(
         datasets=datasets,
@@ -415,22 +437,33 @@ def run_experiment(
         report.errors.append("No runnable jobs (no input images found).")
         return report
 
-    stale_removed = remove_stale_debug_folders(datasets, "all")
-    log.write(f"Removed {len(stale_removed)} stale debug path(s).\n\n")
+    if limit is not None and limit > 0:
+        jobs = jobs[:limit]
+        log.write(f"Processing {len(jobs)} image(s) (--limit {limit}).\n\n")
+
+    if save_debug_images:
+        stale_removed = remove_stale_debug_folders(datasets, "all")
+        log.write(f"Removed {len(stale_removed)} stale debug path(s).\n\n")
 
     rows: list[dict[str, Any]] = []
+    runnable = 0
     for dataset, quality, image_path, vein_root in jobs:
         vein_path = vein_map_path(vein_root, image_path)
         if not vein_path.is_file():
             report.missing_pc_maps.append(str(vein_path))
             continue
+        runnable += 1
         try:
-            debug_dir = finger_vein_image_debug_dir(dataset, quality, image_path.stem)
+            debug_dir = (
+                finger_vein_image_debug_dir(dataset, quality, image_path.stem)
+                if save_debug_images
+                else None
+            )
             result = run_q1_q9_on_image(
                 image_path,
                 vein_root,
                 debug_dir,
-                save_debug_images=True,
+                save_debug_images=save_debug_images,
                 capture_site=DEFAULT_CAPTURE_SITE,
                 openvein_cleanup=cleanup,
             )
@@ -457,12 +490,13 @@ def run_experiment(
 
     df = pd.DataFrame(rows)[list(RESULT_COLUMNS)]
     summary_df = _summary_by_dataset_quality(df)
-    report.warnings.extend(_validate_result_df(df, len(jobs)))
+    report.warnings.extend(_validate_result_df(df, runnable))
     report.rows_written = len(df)
-    layout_issues = validate_debug_layout(datasets, "all")
-    if layout_issues:
-        for key, probs in layout_issues.items():
-            report.warnings.append(f"Debug layout {key}: {'; '.join(probs)}")
+    if save_debug_images:
+        layout_issues = validate_debug_layout(datasets, "all")
+        if layout_issues:
+            for key, probs in layout_issues.items():
+                report.warnings.append(f"Debug layout {key}: {'; '.join(probs)}")
 
     excel_path, csv_path, summary_xlsx, log_path = _write_outputs(
         df,
@@ -475,7 +509,7 @@ def run_experiment(
     report.csv_file = csv_path
     report.summary_file = summary_xlsx
     report.log_file = log_path
-    report.success = len(report.errors) == 0 and report.rows_written == len(jobs)
+    report.success = len(report.errors) == 0 and report.rows_written == runnable
     return report
 
 
@@ -537,6 +571,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "document in publications — not ISO-defined)."
         ),
     )
+    parser.add_argument(
+        "--save-debug-images",
+        action="store_true",
+        help=(
+            "Write per-image debug PNGs under "
+            "debug_outputs/finger_vein/{DATASET}/{quality}/{image_stem}/. "
+            "Off by default for large experiments."
+        ),
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Process at most N images (smoke test; order: dataset, quality, filename).",
+    )
     return parser
 
 
@@ -567,6 +617,8 @@ def main(argv: list[str] | None = None) -> int:
         extractor=args.extractor,
         output_dir=args.output,
         save_excel=save_excel,
+        save_debug_images=args.save_debug_images,
+        limit=args.limit,
         openvein_cleanup=vessel_cleanup_from_preset(args.vessel_cleanup),
     )
 
