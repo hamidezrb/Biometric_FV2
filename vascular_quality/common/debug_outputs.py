@@ -17,6 +17,7 @@ from vascular_quality.common.paths import (
 )
 
 from vascular_quality.common.visualization import overlay_mask, visualize_feature_points_iso_style
+from q6 import Q6Result, build_q6_debug_images
 
 # Same datasets as finger_vein.config; avoid importing that package here (circular import).
 FINGER_VEIN_DATASETS = OPENVEIN_DATASETS
@@ -34,6 +35,13 @@ PC_VESSEL_DEBUG_FILENAMES: tuple[str, ...] = (
     "pc_skeleton.png",
     "q8_skeleton_used.png",
     "q9_feature_points.png",
+)
+
+Q6_DEBUG_FILENAMES: tuple[str, ...] = (
+    "q6_original.png",
+    "q6_foreground_mask.png",
+    "q6_sobel_response.png",
+    "q6_edge_pixels.png",
 )
 
 
@@ -57,6 +65,7 @@ def write_q_debug_images(
     skel_q8: np.ndarray,
     skel_q9: np.ndarray,
     q9_points_vis: np.ndarray,
+    q6_result: Q6Result | None = None,
 ) -> list[Path]:
     """Write q1_debug.png … q9_debug.png into ``out_dir``."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -72,7 +81,16 @@ def write_q_debug_images(
     masked[r_mask != 255] = 0
     q4_vis = cv2.cvtColor(masked, cv2.COLOR_GRAY2BGR)
     q5_vis = overlay_mask(gray, r_mask, color=(0, 200, 255))
-    q6_vis = overlay_mask(gray, unoccluded_mask, color=(0, 255, 128))
+    if q6_result is None:
+        from q6 import calculate_q6_detailed
+
+        q6_result = calculate_q6_detailed(
+            r_mask,
+            gray,
+            S_unoccluded=int(np.count_nonzero(r_mask == 255)),
+        )
+    q6_debug = build_q6_debug_images(gray, r_mask, q6_result)
+    q6_vis = q6_debug["q6_edge_pixels.png"]
     q7_vis = cv2.applyColorMap(
         cv2.normalize(masked, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8),
         cv2.COLORMAP_PLASMA,
@@ -82,6 +100,10 @@ def write_q_debug_images(
 
     images = [q1_vis, q2_vis, q3_vis, q4_vis, q5_vis, q6_vis, q7_vis, q8_vis, q9_vis]
     for name, img in zip(Q_DEBUG_FILENAMES, images):
+        path = out_dir / name
+        cv2.imwrite(str(path), img)
+        written.append(path)
+    for name, img in q6_debug.items():
         path = out_dir / name
         cv2.imwrite(str(path), img)
         written.append(path)
@@ -209,6 +231,7 @@ def validate_debug_layout(
                     for f in folder.iterdir()
                     if f.name not in Q_DEBUG_FILENAMES
                     and f.name not in PC_VESSEL_DEBUG_FILENAMES
+                    and f.name not in Q6_DEBUG_FILENAMES
                 ]
                 if extras:
                     problems.append(f"{stem}: unexpected files: {', '.join(extras)}")

@@ -125,6 +125,20 @@ def iter_quality_classes(quality: str) -> Sequence[str]:
     return (quality,)
 
 
+def iter_dataset_classes(dataset: str) -> Sequence[str]:
+    """Expand ``all`` to PLUS, IDIAP, SCUT (or accept a dataset name / path)."""
+    if dataset == "all":
+        return OPENVEIN_DATASETS
+    path = Path(dataset)
+    name = path.name if path.parts else dataset
+    if name not in OPENVEIN_DATASETS:
+        raise ValueError(
+            f"Unknown dataset {name!r}. "
+            f"Expected one of {OPENVEIN_DATASETS} or 'all'."
+        )
+    return (name,)
+
+
 def resolve_image_paths(
     paths: Iterable[Path],
     *,

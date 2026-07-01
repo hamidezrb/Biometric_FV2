@@ -16,6 +16,7 @@ from vascular_quality.common.paths import (
     DEBUG_OPENVEIN_DIR,
     PROJECT_ROOT,
     QUALITY_CLASSES,
+    iter_dataset_classes,
     iter_quality_classes,
 )
 from vascular_quality.openvein.backend import (
@@ -121,13 +122,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dataset",
         default=None,
-        help="Dataset: PLUS, IDIAP, or SCUT (or path data/finger_vein/PLUS).",
+        help=(
+            "Dataset: PLUS, IDIAP, SCUT, all (all three), or path "
+            "data/finger_vein/PLUS."
+        ),
     )
     parser.add_argument(
         "--quality",
         default="high_quality",
         choices=[*QUALITY_CLASSES, "all"],
-        help="Quality class folder (default: high_quality).",
+        help="Quality class folder: high_quality, low_quality, or all (both).",
     )
     parser.add_argument(
         "--input",
@@ -216,35 +220,46 @@ def main(argv: list[str] | None = None) -> int:
                 "--quality all is not supported with --input; "
                 "pick high_quality or low_quality."
             )
+        if args.dataset == "all":
+            parser.error(
+                "--dataset all is not supported with --input; "
+                "pick PLUS, IDIAP, or SCUT."
+            )
+        datasets = [args.dataset or "CUSTOM"]
         qualities = [args.quality]
     else:
         if args.dataset is None:
             parser.error("--dataset is required unless --input is set.")
-        qualities = list(iter_quality_classes(args.quality))
+        try:
+            datasets = list(iter_dataset_classes(args.dataset))
+            qualities = list(iter_quality_classes(args.quality))
+        except ValueError as exc:
+            parser.error(str(exc))
 
     toolkit_root = resolve_matlab_toolkit_root(
         str(args.matlab_toolkit_root) if args.matlab_toolkit_root else None
     )
 
     try:
-        for q in qualities:
-            if args.quality == "all" and len(qualities) > 1:
-                print(f"\n{'=' * 60}\nQuality: {q}\n{'=' * 60}")
-            run_extraction(
-                backend=args.backend,
-                dataset=args.dataset,
-                quality=q,
-                input_dir=args.input,
-                output_root=args.output,
-                extractors=args.extractors,
-                matlab_toolkit_root=toolkit_root,
-                continue_on_error=args.continue_on_error,
-                dry_run=args.dry_run,
-                limit=args.limit,
-                skip_unavailable_preprocess=not args.strict_preprocess,
-                skip_unavailable_extractors=args.skip_unavailable_extractors,
-                clean_output=args.clean_output,
-            )
+        for ds in datasets:
+            for q in qualities:
+                if len(datasets) > 1 or len(qualities) > 1:
+                    print(f"\n{'=' * 60}\nDataset: {ds}  Quality: {q}\n{'=' * 60}")
+                run_extraction(
+                    backend=args.backend,
+                    dataset=ds,
+                    quality=q,
+                    input_dir=args.input,
+                    output_root=args.output,
+                    extractors=args.extractors,
+                    matlab_toolkit_root=toolkit_root,
+                    continue_on_error=args.continue_on_error,
+                    dry_run=args.dry_run,
+                    limit=args.limit,
+                    skip_unavailable_preprocess=not args.strict_preprocess,
+                    skip_unavailable_extractors=args.skip_unavailable_extractors,
+                    clean_output=args.clean_output,
+                )
     except (
         FileNotFoundError,
         ValueError,

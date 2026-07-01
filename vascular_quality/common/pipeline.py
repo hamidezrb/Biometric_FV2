@@ -14,7 +14,7 @@ from q2 import calculate_q2
 from q3 import calculate_q3
 from q4 import calculate_q4
 from q5 import calculate_q5
-from q6 import calculate_q6
+from q6 import calculate_q6_detailed
 from q7 import calculate_q7
 from q8 import calculate_q8
 from q9 import calculate_q9
@@ -73,7 +73,9 @@ def run_q1_q9_on_image(
     Q3, sigma, g_mean = calculate_q3(R_mask, gray)
     Q4, sigma, g_mean = calculate_q4(R_mask, gray)
     Q5, H_bits = calculate_q5(R_mask, gray, bit_depth=8, ep_c=0.75)
-    Q6, N100 = calculate_q6(R_mask, gray, S_unoccluded=Sunocc, gc=0.006)
+    q6_result = calculate_q6_detailed(R_mask, gray, S_unoccluded=Sunocc, gc=0.006)
+    Q6 = q6_result.Q6_score
+    N100 = q6_result.N100
     Q7, block_var = calculate_q7(R_mask, gray, g_mean)
 
     vein_path = vein_map_path(vein_root, image_path)
@@ -146,6 +148,7 @@ def run_q1_q9_on_image(
             skel_q8=skel_q8,
             skel_q9=skel_q9,
             q9_points_vis=q9_points_vis,
+            q6_result=q6_result,
         )
         debug_dir = str(debug_out)
 
@@ -163,7 +166,7 @@ def run_q1_q9_on_image(
         "Q3": Q3, "sigma": float(sigma), "g_mean": float(g_mean),
         "Q4": Q4,
         "Q5": Q5, "H_bits": float(H_bits),
-        "Q6": Q6, "N100": int(N100),
+        "Q6": Q6, "N100": int(N100), "q6_raw": float(q6_result.q6_raw),
         "Q7": Q7,
         "Q8": Q8, "N_vessel": int(N_vessel),
         "Q9": Q9, "N_fp": int(N_fp), "N_end": int(N_end), "N_int": int(N_int),

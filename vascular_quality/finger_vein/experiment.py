@@ -7,13 +7,15 @@ Produces Excel/CSV results under results/finger_vein/PC/ by default.
 from __future__ import annotations
 
 import argparse
+import time
 import traceback
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from io import StringIO
+from itertools import groupby
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import numpy as np
 import pandas as pd
@@ -94,6 +96,11 @@ class ExperimentReport:
     high_quality_images: int = 0
     low_quality_images: int = 0
     total_images: int = 0
+    total_expected: int = 0
+    total_processed: int = 0
+    total_failed: int = 0
+    total_skipped: int = 0
+    elapsed_seconds: float = 0.0
     missing_pc_maps: list[str] = field(default_factory=list)
     rows_written: int = 0
     excel_file: Path | None = None
@@ -141,6 +148,169 @@ def _collect_jobs(
             for image_path in list_images_in_dir(image_dir):
                 jobs.append((dataset, quality, image_path, vein_root))
     return jobs
+
+
+def _fmt_duration(seconds: float) -> str:
+    total = int(max(0, round(seconds)))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+class ExperimentProgress:
+    """Terminal + log progress reporting (optional tqdm bar)."""
+
+    def __init__(
+        self,
+        log: TextIO,
+        *,
+        total_jobs: int,
+        quiet: bool = False,
+        progress_every: int = 1,
+    ) -> None:
+        self._log = log
+        self.quiet = quiet
+        self.progress_every = max(1, progress_every)
+        self.total_jobs = total_jobs
+        self.global_done = 0
+        self.group_done = 0
+        self.group_total = 0
+        self._group_label = ""
+        self._start = time.monotonic()
+        self._group_start = self._start
+        self._tqdm_bar: Any = None
+        try:
+            from tqdm import tqdm
+
+            self._tqdm_cls = tqdm
+        except ImportError:
+            self._tqdm_cls = None
+
+    def _write(self, line: str, *, force_terminal: bool = False) -> None:
+        self._log.write(line + "\n")
+        if self.quiet and not force_terminal:
+            return
+        print(line, flush=True)
+
+    def start_experiment(self, total_jobs: int) -> None:
+        self._write(f"Experiment: {total_jobs} image(s) queued.")
+        if not self.quiet and self._tqdm_cls is not None and total_jobs > 0:
+            import sys
+
+            self._tqdm_bar = self._tqdm_cls(
+                total=total_jobs,
+                unit="img",
+                desc="Total",
+                leave=True,
+                file=sys.stderr,
+            )
+
+    def start_group(
+        self,
+        dataset: str,
+        quality: str,
+        n_images: int,
+        *,
+        extractor: str,
+        vessel_cleanup: str,
+    ) -> None:
+        self._group_label = f"{dataset}/{quality}"
+        self.group_done = 0
+        self.group_total = n_images
+        self._group_start = time.monotonic()
+        self._write(
+            f"\nStarting group: {dataset} / {quality}\n"
+            f"Images in group: {n_images}\n"
+            f"Extractor: {extractor}\n"
+            f"Vessel cleanup: {vessel_cleanup}"
+        )
+
+    def warn_missing_pc_map(
+        self,
+        dataset: str,
+        quality: str,
+        image_name: str,
+        vein_path: Path,
+    ) -> None:
+        self._write(
+            f"WARNING [{dataset}/{quality}] skipped — missing PC map: "
+            f"{image_name} (expected {vein_path.name})",
+            force_terminal=True,
+        )
+
+    def warn_failure(
+        self,
+        dataset: str,
+        quality: str,
+        image_name: str,
+        exc: BaseException,
+    ) -> None:
+        self._write(
+            f"ERROR [{dataset}/{quality}] failed — {image_name}: {exc}",
+            force_terminal=True,
+        )
+
+    def on_image_done(self, dataset: str, quality: str, image_name: str) -> None:
+        self.global_done += 1
+        self.group_done += 1
+        if self._tqdm_bar is not None:
+            self._tqdm_bar.update(1)
+
+        if self.quiet:
+            return
+        if self.group_done % self.progress_every != 0 and self.global_done != self.total_jobs:
+            return
+
+        elapsed = time.monotonic() - self._start
+        group_elapsed = time.monotonic() - self._group_start
+        group_eta = (
+            group_elapsed / self.group_done * (self.group_total - self.group_done)
+            if self.group_done
+            else 0.0
+        )
+        pct = 100.0 * self.global_done / self.total_jobs if self.total_jobs else 0.0
+
+        self._write(
+            f"[{dataset}/{quality}] {self.group_done}/{self.group_total} processed | "
+            f"current: {image_name} | elapsed: {_fmt_duration(group_elapsed)} | "
+            f"ETA: {_fmt_duration(group_eta)}"
+        )
+        self._write(
+            f"Total progress: {self.global_done}/{self.total_jobs} images processed "
+            f"({pct:.1f}%)"
+        )
+
+    def close(self) -> None:
+        if self._tqdm_bar is not None:
+            self._tqdm_bar.close()
+            self._tqdm_bar = None
+
+    def write_summary(
+        self,
+        *,
+        total_expected: int,
+        total_processed: int,
+        total_failed: int,
+        total_skipped: int,
+        elapsed_seconds: float,
+        excel_file: Path | None,
+        csv_file: Path | None,
+        log_file: Path | None,
+    ) -> None:
+        lines = [
+            "",
+            "Experiment finished",
+            f"Total images expected: {total_expected}",
+            f"Total processed: {total_processed}",
+            f"Total failed: {total_failed}",
+            f"Total skipped: {total_skipped}",
+            f"Elapsed time: {_fmt_duration(elapsed_seconds)}",
+            f"Excel saved: {excel_file if excel_file else '(not written)'}",
+            f"CSV saved: {csv_file if csv_file else '(not written)'}",
+            f"Log saved: {log_file if log_file else '(not written)'}",
+        ]
+        for line in lines:
+            self._write(line, force_terminal=True)
 
 
 def _row_from_result(
@@ -398,17 +568,22 @@ def run_experiment(
     save_debug_images: bool = False,
     limit: int | None = None,
     openvein_cleanup: OpenVeinVesselCleanupConfig | None = None,
+    quiet: bool = False,
+    progress_every: int = 1,
 ) -> ExperimentReport:
     extractor = _normalize_extractor(extractor)
     cleanup = openvein_cleanup or vessel_cleanup_from_preset(DEFAULT_VESSEL_CLEANUP_PRESET)
     report = ExperimentReport()
     log = StringIO()
+    t0 = time.monotonic()
     log.write(f"Finger-vein PC experiment started: {datetime.now(timezone.utc).isoformat()}\n")
     log.write(f"Unified score: {unified_weight_description()}\n")
     log.write(f"COEFFICIENTS_ARE_PLACEHOLDER={COEFFICIENTS_ARE_PLACEHOLDER}\n")
     log.write(f"Vessel cleanup preset: {cleanup.preset_name}\n")
     log.write(f"Vessel cleanup config: {cleanup.summary()}\n")
-    log.write(f"Save debug images: {save_debug_images}\n\n")
+    log.write(f"Save debug images: {save_debug_images}\n")
+    log.write(f"Progress every: {max(1, progress_every)} image(s)\n")
+    log.write(f"Quiet mode: {quiet}\n\n")
 
     dry = run_dry_run(
         datasets=datasets,
@@ -421,6 +596,7 @@ def run_experiment(
     if not dry.ok:
         report.errors = dry.issues
         report.warnings = dry.warnings
+        report.elapsed_seconds = time.monotonic() - t0
         _, csv_path, _, log_path = _write_outputs(
             pd.DataFrame(columns=RESULT_COLUMNS),
             pd.DataFrame(),
@@ -441,51 +617,104 @@ def run_experiment(
         jobs = jobs[:limit]
         log.write(f"Processing {len(jobs)} image(s) (--limit {limit}).\n\n")
 
+    report.total_expected = len(jobs)
+    progress = ExperimentProgress(
+        log,
+        total_jobs=report.total_expected,
+        quiet=quiet,
+        progress_every=progress_every,
+    )
+    progress.start_experiment(report.total_expected)
+
     if save_debug_images:
         stale_removed = remove_stale_debug_folders(datasets, "all")
         log.write(f"Removed {len(stale_removed)} stale debug path(s).\n\n")
 
     rows: list[dict[str, Any]] = []
     runnable = 0
-    for dataset, quality, image_path, vein_root in jobs:
-        vein_path = vein_map_path(vein_root, image_path)
-        if not vein_path.is_file():
-            report.missing_pc_maps.append(str(vein_path))
-            continue
-        runnable += 1
-        try:
-            debug_dir = (
-                finger_vein_image_debug_dir(dataset, quality, image_path.stem)
-                if save_debug_images
-                else None
+
+    try:
+        for dataset, quality, group_jobs in _iter_job_groups(jobs):
+            progress.start_group(
+                dataset,
+                quality,
+                len(group_jobs),
+                extractor=extractor,
+                vessel_cleanup=cleanup.preset_name,
             )
-            result = run_q1_q9_on_image(
-                image_path,
-                vein_root,
-                debug_dir,
-                save_debug_images=save_debug_images,
-                capture_site=DEFAULT_CAPTURE_SITE,
-                openvein_cleanup=cleanup,
-            )
-            rows.append(
-                _row_from_result(dataset, quality, image_path, result, extractor)
-            )
-            log.write(f"OK {dataset}/{quality}/{image_path.name}\n")
-            if dataset not in report.datasets_processed:
-                report.datasets_processed.append(dataset)
-            if quality == "high_quality":
-                report.high_quality_images += 1
-            else:
-                report.low_quality_images += 1
-        except Exception as exc:
-            msg = f"{dataset}/{quality}/{image_path.name}: {exc}"
-            report.errors.append(msg)
-            log.write(f"ERROR: {msg}\n{traceback.format_exc()}\n")
+            for _ds, _q, image_path, vein_root in group_jobs:
+                vein_path = vein_map_path(vein_root, image_path)
+                if not vein_path.is_file():
+                    report.missing_pc_maps.append(str(vein_path))
+                    report.total_skipped += 1
+                    progress.warn_missing_pc_map(
+                        dataset, quality, image_path.name, vein_path
+                    )
+                    log.write(
+                        f"SKIP {dataset}/{quality}/{image_path.name} "
+                        f"(missing PC map: {vein_path.name})\n"
+                    )
+                    continue
+                runnable += 1
+                try:
+                    debug_dir = (
+                        finger_vein_image_debug_dir(dataset, quality, image_path.stem)
+                        if save_debug_images
+                        else None
+                    )
+                    result = run_q1_q9_on_image(
+                        image_path,
+                        vein_root,
+                        debug_dir,
+                        save_debug_images=save_debug_images,
+                        capture_site=DEFAULT_CAPTURE_SITE,
+                        openvein_cleanup=cleanup,
+                    )
+                    rows.append(
+                        _row_from_result(dataset, quality, image_path, result, extractor)
+                    )
+                    report.total_processed += 1
+                    log.write(f"OK {dataset}/{quality}/{image_path.name}\n")
+                    progress.on_image_done(dataset, quality, image_path.name)
+                    if dataset not in report.datasets_processed:
+                        report.datasets_processed.append(dataset)
+                    if quality == "high_quality":
+                        report.high_quality_images += 1
+                    else:
+                        report.low_quality_images += 1
+                except Exception as exc:
+                    report.total_failed += 1
+                    msg = f"{dataset}/{quality}/{image_path.name}: {exc}"
+                    report.errors.append(msg)
+                    progress.warn_failure(dataset, quality, image_path.name, exc)
+                    log.write(f"ERROR: {msg}\n{traceback.format_exc()}\n")
+    finally:
+        progress.close()
 
     report.total_images = report.high_quality_images + report.low_quality_images
+    report.elapsed_seconds = time.monotonic() - t0
 
     if not rows:
         report.errors.append("No results produced.")
+        progress.write_summary(
+            total_expected=report.total_expected,
+            total_processed=report.total_processed,
+            total_failed=report.total_failed,
+            total_skipped=report.total_skipped,
+            elapsed_seconds=report.elapsed_seconds,
+            excel_file=None,
+            csv_file=None,
+            log_file=output_dir / "q1_q9_pc_log.txt",
+        )
+        _, csv_path, _, log_path = _write_outputs(
+            pd.DataFrame(columns=RESULT_COLUMNS),
+            pd.DataFrame(),
+            output_dir,
+            save_excel=False,
+            log_text=log.getvalue(),
+        )
+        report.csv_file = csv_path
+        report.log_file = log_path
         return report
 
     df = pd.DataFrame(rows)[list(RESULT_COLUMNS)]
@@ -497,6 +726,17 @@ def run_experiment(
         if layout_issues:
             for key, probs in layout_issues.items():
                 report.warnings.append(f"Debug layout {key}: {'; '.join(probs)}")
+
+    progress.write_summary(
+        total_expected=report.total_expected,
+        total_processed=report.total_processed,
+        total_failed=report.total_failed,
+        total_skipped=report.total_skipped,
+        elapsed_seconds=report.elapsed_seconds,
+        excel_file=output_dir / "q1_q9_pc_results.xlsx" if save_excel else None,
+        csv_file=output_dir / "q1_q9_pc_results.csv",
+        log_file=output_dir / "q1_q9_pc_log.txt",
+    )
 
     excel_path, csv_path, summary_xlsx, log_path = _write_outputs(
         df,
@@ -511,6 +751,16 @@ def run_experiment(
     report.log_file = log_path
     report.success = len(report.errors) == 0 and report.rows_written == runnable
     return report
+
+
+def _iter_job_groups(
+    jobs: list[tuple[str, str, Path, Path]],
+) -> list[tuple[str, str, list[tuple[str, str, Path, Path]]]]:
+    """Group consecutive jobs by (dataset, quality)."""
+    groups: list[tuple[str, str, list[tuple[str, str, Path, Path]]]] = []
+    for (dataset, quality), group in groupby(jobs, key=lambda j: (j[0], j[1])):
+        groups.append((dataset, quality, list(group)))
+    return groups
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -587,6 +837,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Process at most N images (smoke test; order: dataset, quality, filename).",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Only print errors, skips, and the final summary (no per-image progress).",
+    )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Print group/total progress every N successfully processed images (default: 1).",
+    )
     return parser
 
 
@@ -620,21 +882,16 @@ def main(argv: list[str] | None = None) -> int:
         save_debug_images=args.save_debug_images,
         limit=args.limit,
         openvein_cleanup=vessel_cleanup_from_preset(args.vessel_cleanup),
+        quiet=args.quiet,
+        progress_every=args.progress_every,
     )
 
-    print(f"\nRows written: {result.rows_written}")
-    if result.excel_file:
-        print(f"Excel: {result.excel_file}")
-    if result.csv_file:
-        print(f"CSV: {result.csv_file}")
-    if result.summary_file:
-        print(f"Summary: {result.summary_file}")
     if result.warnings:
-        print("Warnings:")
+        print("\nWarnings:")
         for w in result.warnings:
             print(f"  - {w}")
     if result.errors:
-        print("Errors:")
+        print("\nErrors:")
         for e in result.errors:
             print(f"  - {e}")
 
