@@ -12,9 +12,11 @@ from typing import Literal
 
 from vascular_quality.common.paths import (
     DEBUG_OPENVEIN_DIR,
+    DEFAULT_MODALITY,
     OPENVEIN_EXTRACTORS,
     QUALITY_CLASSES,
-    finger_vein_image_dir,
+    iter_modality_dataset_classes,
+    modality_image_dir,
 )
 from vascular_quality.finger_vein.config import FINGER_VEIN_DATASETS
 from vascular_quality.openvein.extractors import EXTRACTOR_NAMES
@@ -28,8 +30,9 @@ DEFAULT_MATLAB_TOOLKIT_ENV = "OPENVEIN_TOOLKIT_ROOT"
 
 @dataclass(frozen=True)
 class ExtractionJob:
-    """One dataset / quality extraction run."""
+    """One modality / dataset / quality extraction run."""
 
+    modality: str
     dataset: str
     quality: str
     image_dir: Path
@@ -39,19 +42,23 @@ class ExtractionJob:
     limit: int | None = None
 
 
-def parse_dataset_name(dataset_arg: str) -> str:
-    """Accept ``PLUS`` or a path like ``data/finger_vein/PLUS``."""
+def parse_dataset_name(dataset_arg: str, *, modality: str = DEFAULT_MODALITY) -> str:
+    """Accept a dataset name or a path like ``data/finger_vein/PLUS``."""
     path = Path(dataset_arg)
     name = path.name if path.parts else dataset_arg
-    if name not in FINGER_VEIN_DATASETS:
-        raise ValueError(
-            f"Unknown dataset {name!r}. Expected one of: {', '.join(FINGER_VEIN_DATASETS)}."
-        )
-    return name
+    if modality == "finger_vein":
+        if name not in FINGER_VEIN_DATASETS:
+            raise ValueError(
+                f"Unknown dataset {name!r}. Expected one of: {', '.join(FINGER_VEIN_DATASETS)}."
+            )
+        return name
+    resolved = tuple(iter_modality_dataset_classes(modality, name))
+    return resolved[0]
 
 
 def resolve_extraction_job(
     *,
+    modality: str = DEFAULT_MODALITY,
     dataset: str | None,
     quality: str,
     input_dir: Path | None = None,
@@ -69,19 +76,19 @@ def resolve_extraction_job(
     else:
         if dataset is None:
             raise ValueError(
-                "Provide --dataset (PLUS, IDIAP, or SCUT) "
+                f"Provide --dataset for modality {modality!r} "
                 "or --input pointing at an image folder."
             )
-        ds = parse_dataset_name(dataset)
+        ds = parse_dataset_name(dataset, modality=modality)
         if quality not in QUALITY_CLASSES:
             raise ValueError(
                 f"Unknown quality {quality!r}. Expected: {', '.join(QUALITY_CLASSES)}."
             )
-        folder = finger_vein_image_dir(ds, quality)
+        folder = modality_image_dir(modality, ds, quality)
         if not folder.is_dir():
             raise FileNotFoundError(
                 f"Input folder missing: {folder}\n"
-                f"Run: python scripts/setup_finger_vein_layout.py"
+                f"Expected layout: data/{modality}/{{DATASET}}/{{quality}}/"
             )
         q = quality
 
@@ -100,6 +107,7 @@ def resolve_extraction_job(
         images = images[:limit]
 
     return ExtractionJob(
+        modality=modality,
         dataset=ds,
         quality=q,
         image_dir=folder,
@@ -144,6 +152,7 @@ class ExtractionBackend(ABC):
         self.validate_runtime(toolkit_root=toolkit_root, require_engine=False)
         images = self.validate_job(job)
         print(f"Backend:     {self.kind}")
+        print(f"Modality:    {job.modality}")
         print(f"Dataset:     {job.dataset}")
         print(f"Quality:     {job.quality}")
         limit_note = f" (limit {job.limit})" if job.limit is not None else ""

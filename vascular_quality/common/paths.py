@@ -21,10 +21,13 @@ DEBUG_OUTPUTS_DIR = PROJECT_ROOT / "debug_outputs"
 
 # OpenVein vein-map tree (no anatomy prefix under debug_openvein_features):
 #   debug_openvein_features/{DATASET}/{quality}/{EXTRACTOR}/*.png
-#   DATASET ∈ PLUS, IDIAP, SCUT
+#   Finger vein DATASET ∈ PLUS, IDIAP, SCUT; dorsal/palm datasets are auto-discovered
 #   quality ∈ high_quality, low_quality
 #   EXTRACTOR ∈ RLT, MC, WLD, PC, GF, EMC
 OPENVEIN_DATASETS: tuple[str, ...] = ("PLUS", "IDIAP", "SCUT")
+
+VASCULAR_MODALITIES: tuple[str, ...] = ("finger_vein", "dorsal_hand", "palm")
+DEFAULT_MODALITY = "finger_vein"
 
 QUALITY_CLASSES: tuple[str, ...] = ("high_quality", "low_quality")
 
@@ -49,8 +52,36 @@ IMAGE_EXTENSIONS: tuple[str, ...] = (
 )
 
 
+def modality_data_root(modality: str = DEFAULT_MODALITY) -> Path:
+    """data/{modality}/"""
+    if modality not in VASCULAR_MODALITIES:
+        raise ValueError(
+            f"Unknown modality {modality!r}. Expected one of: {', '.join(VASCULAR_MODALITIES)}."
+        )
+    return DATA_DIR / modality
+
+
+def modality_image_dir(modality: str, dataset: str, quality: str) -> Path:
+    """data/{modality}/{dataset}/{quality}/"""
+    return modality_data_root(modality) / dataset / quality
+
+
+def discover_modality_datasets(modality: str = DEFAULT_MODALITY) -> tuple[str, ...]:
+    """Return dataset folder names under data/{modality}/ that contain quality subfolders."""
+    root = modality_data_root(modality)
+    if not root.is_dir():
+        return ()
+    datasets: list[str] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        if any(q.is_dir() for q in child.iterdir()):
+            datasets.append(child.name)
+    return tuple(datasets)
+
+
 def finger_vein_root() -> Path:
-    return DATA_DIR / "finger_vein"
+    return modality_data_root("finger_vein")
 
 
 def finger_vein_dataset_names() -> tuple[str, ...]:
@@ -61,7 +92,7 @@ def finger_vein_dataset_names() -> tuple[str, ...]:
 
 def finger_vein_image_dir(dataset: str, quality: str) -> Path:
     """data/finger_vein/{dataset}/{quality}/"""
-    return finger_vein_root() / dataset / quality
+    return modality_image_dir("finger_vein", dataset, quality)
 
 
 def openvein_quality_dir(dataset: str, quality: str) -> Path:
@@ -98,12 +129,12 @@ def finger_vein_debug_run_dir(run_id: str) -> Path:
 
 
 def palm_data_dir(quality: str) -> Path:
-    """data/palm/{quality}/ — reserved for future palm experiments."""
+    """Legacy helper — prefer modality_image_dir('palm', dataset, quality)."""
     return DATA_DIR / "palm" / quality
 
 
 def dorsal_hand_data_dir(quality: str) -> Path:
-    """data/dorsal_hand/{quality}/ — reserved for future dorsal-hand experiments."""
+    """Legacy helper — prefer modality_image_dir('dorsal_hand', dataset, quality)."""
     return DATA_DIR / "dorsal_hand" / quality
 
 
@@ -135,6 +166,52 @@ def iter_dataset_classes(dataset: str) -> Sequence[str]:
         raise ValueError(
             f"Unknown dataset {name!r}. "
             f"Expected one of {OPENVEIN_DATASETS} or 'all'."
+        )
+    return (name,)
+
+
+def iter_modality_dataset_classes(
+    modality: str,
+    dataset: str | None,
+) -> Sequence[str]:
+    """
+    Resolve dataset names for OpenVein extraction.
+
+    Finger vein: ``dataset`` is required (PLUS, IDIAP, SCUT, or all).
+    Dorsal hand / palm: ``dataset`` may be omitted or ``all`` to auto-detect
+    every folder under ``data/{modality}/``.
+    """
+    if modality not in VASCULAR_MODALITIES:
+        raise ValueError(
+            f"Unknown modality {modality!r}. "
+            f"Expected one of: {', '.join(VASCULAR_MODALITIES)}."
+        )
+
+    if modality == "finger_vein":
+        if dataset is None:
+            raise ValueError(
+                "Provide --dataset (PLUS, IDIAP, SCUT, or all) "
+                "or --input pointing at an image folder."
+            )
+        return iter_dataset_classes(dataset)
+
+    discovered = discover_modality_datasets(modality)
+    if dataset is None or dataset == "all":
+        if not discovered:
+            raise ValueError(
+                f"No datasets found under {modality_data_root(modality)}. "
+                f"Create data/{modality}/{{DATASET}}/{{high_quality|low_quality}}/ first."
+            )
+        return discovered
+
+    path = Path(dataset)
+    name = path.name if path.parts else dataset
+    ds_root = modality_data_root(modality) / name
+    if not ds_root.is_dir():
+        known = ", ".join(discovered) if discovered else "(none detected)"
+        raise ValueError(
+            f"Unknown dataset {name!r} for modality {modality}. "
+            f"Expected one of: {known}, 'all', or a path under data/{modality}/."
         )
     return (name,)
 

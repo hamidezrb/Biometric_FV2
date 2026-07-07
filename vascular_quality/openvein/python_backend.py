@@ -73,6 +73,7 @@ class PythonOpenVeinBackend(ExtractionBackend):
         written: dict[str, list[Path]] = {tag: [] for tag in job.extractors}
 
         print("Backend: python (APPROXIMATE — not for final experiments)")
+        print(f"Modality: {job.modality}")
         limit_note = f", limit={job.limit}" if job.limit is not None else ""
         print(f"Input:   {job.image_dir} ({len(images)} image(s){limit_note})")
         print(f"Output:  {job.output_root / job.dataset / job.quality}/{{EXTRACTOR}}/")

@@ -14,9 +14,11 @@ from pathlib import Path
 
 from vascular_quality.common.paths import (
     DEBUG_OPENVEIN_DIR,
+    DEFAULT_MODALITY,
     PROJECT_ROOT,
     QUALITY_CLASSES,
-    iter_dataset_classes,
+    VASCULAR_MODALITIES,
+    iter_modality_dataset_classes,
     iter_quality_classes,
 )
 from vascular_quality.openvein.backend import (
@@ -41,6 +43,7 @@ from vascular_quality.openvein.extractors import (
 
 def run_extraction(
     *,
+    modality: str = DEFAULT_MODALITY,
     backend: BackendKind = DEFAULT_BACKEND,
     dataset: str | None = None,
     quality: str = "high_quality",
@@ -61,6 +64,7 @@ def run_extraction(
     Returns mapping extractor_tag -> list of written output paths.
     """
     job = resolve_extraction_job(
+        modality=modality,
         dataset=dataset,
         quality=quality,
         input_dir=Path(input_dir) if input_dir else None,
@@ -105,6 +109,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--modality",
+        default=DEFAULT_MODALITY,
+        choices=list(VASCULAR_MODALITIES),
+        help=(
+            "Vascular capture modality (default: finger_vein). "
+            "Images are read from data/{modality}/{DATASET}/{quality}/."
+        ),
+    )
+    parser.add_argument(
         "--backend",
         choices=("matlab", "python"),
         default=DEFAULT_BACKEND,
@@ -123,8 +136,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--dataset",
         default=None,
         help=(
-            "Dataset: PLUS, IDIAP, SCUT, all (all three), or path "
-            "data/finger_vein/PLUS."
+            "Dataset name, path, or 'all'. "
+            "Finger vein: PLUS, IDIAP, SCUT, or all (required unless --input). "
+            "Dorsal hand / palm: auto-detected under data/{modality}/ when omitted or all."
         ),
     )
     parser.add_argument(
@@ -223,15 +237,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.dataset == "all":
             parser.error(
                 "--dataset all is not supported with --input; "
-                "pick PLUS, IDIAP, or SCUT."
+                "pass a single dataset name."
             )
         datasets = [args.dataset or "CUSTOM"]
         qualities = [args.quality]
     else:
-        if args.dataset is None:
-            parser.error("--dataset is required unless --input is set.")
+        if args.modality == "finger_vein" and args.dataset is None:
+            parser.error("--dataset is required for finger_vein unless --input is set.")
         try:
-            datasets = list(iter_dataset_classes(args.dataset))
+            datasets = list(iter_modality_dataset_classes(args.modality, args.dataset))
             qualities = list(iter_quality_classes(args.quality))
         except ValueError as exc:
             parser.error(str(exc))
@@ -244,8 +258,13 @@ def main(argv: list[str] | None = None) -> int:
         for ds in datasets:
             for q in qualities:
                 if len(datasets) > 1 or len(qualities) > 1:
-                    print(f"\n{'=' * 60}\nDataset: {ds}  Quality: {q}\n{'=' * 60}")
+                    print(
+                        f"\n{'=' * 60}\n"
+                        f"Modality: {args.modality}  Dataset: {ds}  Quality: {q}\n"
+                        f"{'=' * 60}"
+                    )
                 run_extraction(
+                    modality=args.modality,
                     backend=args.backend,
                     dataset=ds,
                     quality=q,

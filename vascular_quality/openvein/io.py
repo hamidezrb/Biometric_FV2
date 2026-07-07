@@ -51,7 +51,7 @@ def list_input_images(input_dir: Path | str) -> list[Path]:
     if not folder.is_dir():
         raise FileNotFoundError(
             f"Input folder does not exist: {folder}\n"
-            f"Expected layout: data/finger_vein/{{PLUS,IDIAP,SCUT}}/{{high_quality,low_quality}}/"
+            f"Expected layout: data/{{modality}}/{{DATASET}}/{{high_quality|low_quality}}/"
         )
     images = list_images_in_dir(folder)
     if not images:

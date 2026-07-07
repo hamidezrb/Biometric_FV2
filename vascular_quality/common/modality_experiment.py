@@ -20,7 +20,12 @@ import pandas as pd
 from iso_constants import CaptureSite
 from vascular_quality.common.images import list_images_in_dir
 from vascular_quality.common.openvein import vein_map_path
-from vascular_quality.common.paths import PROJECT_ROOT, ensure_dir, openvein_vein_map_dir
+from vascular_quality.common.paths import (
+    PROJECT_ROOT,
+    discover_modality_datasets,
+    ensure_dir,
+    openvein_vein_map_dir,
+)
 from vascular_quality.common.pipeline import run_q1_q9_on_image
 from vascular_quality.finger_vein.config import (
     DEFAULT_VESSEL_CLEANUP_PRESET,
@@ -51,16 +56,7 @@ def _modality_image_dir(spec: ModalitySpec, dataset: str, quality: str) -> Path:
 
 
 def discover_supported_datasets(spec: ModalitySpec) -> list[str]:
-    if not spec.data_root.is_dir():
-        return []
-    datasets: list[str] = []
-    for child in sorted(spec.data_root.iterdir()):
-        if not child.is_dir():
-            continue
-        has_quality_dir = any(q.is_dir() for q in child.iterdir())
-        if has_quality_dir:
-            datasets.append(child.name)
-    return datasets
+    return list(discover_modality_datasets(spec.name))
 
 
 def _collect_jobs(

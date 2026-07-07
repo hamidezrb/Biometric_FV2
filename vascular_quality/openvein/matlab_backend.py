@@ -188,6 +188,7 @@ class MatlabOpenVeinBackend(ExtractionBackend):
         errors: list[str] = []
 
         print(f"Backend: matlab (original OpenVein)")
+        print(f"Modality: {job.modality}")
         limit_note = f", limit={job.limit}" if job.limit is not None else ""
         print(f"Input:   {job.image_dir} ({len(images)} image(s){limit_note})")
         print(f"Output:  {job.output_root / job.dataset / job.quality}/{{EXTRACTOR}}/")

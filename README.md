@@ -53,6 +53,14 @@ data/
     SCUT/
       high_quality/
       low_quality/
+  dorsal_hand/
+    {DATASET}/
+      high_quality/
+      low_quality/
+  palm/
+    {DATASET}/
+      high_quality/
+      low_quality/
 ```
 
 Supported formats: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tif`, `.tiff`
@@ -99,18 +107,82 @@ $env:OPENVEIN_TOOLKIT_ROOT = "C:\Users\user\Downloads\OpenVein-Toolkit_v1.0.2"
 
 Docs: [MATLAB Engine for Python](https://www.mathworks.com/help/matlab/matlab-engine-for-python.html)
 
-### Extract OpenVein features (MATLAB backend)
+### OpenVein Feature Extraction (MATLAB Backend)
 
-Single dataset / quality:
+OpenVein feature extraction supports three vascular modalities:
+
+- **Finger Vein** (`--modality finger_vein`, default)
+- **Dorsal Hand** (`--modality dorsal_hand`)
+- **Palm** (`--modality palm`)
+
+All modalities use the same MATLAB backend, extractor interfaces, output layout, logging, and CLI flags. Images are read from `data/{modality}/{DATASET}/{quality}/` and feature maps are written to `{output}/{DATASET}/{quality}/{EXTRACTOR}/`.
+
+Required toolkit:
+
+```text
+OpenVein-Toolkit_v1.0.2
+```
+
+#### Folder structure
+
+```text
+data/
+  finger_vein/
+    PLUS/
+      high_quality/
+      low_quality/
+    IDIAP/
+      high_quality/
+      low_quality/
+    SCUT/
+      high_quality/
+      low_quality/
+  dorsal_hand/
+    {DATASET}/
+      high_quality/
+      low_quality/
+  palm/
+    {DATASET}/
+      high_quality/
+      low_quality/
+```
+
+Dorsal-hand and palm dataset names are **auto-detected** from folder names under `data/dorsal_hand/` and `data/palm/` (for example `Bosphorus`, `NCUT`).
+
+#### Output layout
+
+```text
+debug_openvein_features/
+  {DATASET}/
+    {high_quality|low_quality}/
+      PC/
+        {stem}.png
+```
+
+#### Example commands
+
+Finger Vein (single dataset / quality):
 
 ```powershell
 python -m vascular_quality.openvein.pipeline --backend matlab --matlab-toolkit-root "C:/Users/user/Downloads/OpenVein-Toolkit_v1.0.2" --dataset PLUS --quality high_quality --extractors PC --output debug_openvein_features --continue-on-error
 ```
 
-All datasets and qualities (`--dataset all` → PLUS, IDIAP, SCUT; `--quality all` → high_quality, low_quality):
+Finger Vein (all datasets and qualities):
 
 ```powershell
 python -m vascular_quality.openvein.pipeline --backend matlab --matlab-toolkit-root "C:/Users/user/Downloads/OpenVein-Toolkit_v1.0.2" --dataset all --quality all --extractors PC --output debug_openvein_features --clean-output --continue-on-error
+```
+
+Dorsal Hand (all auto-detected datasets):
+
+```powershell
+python -m vascular_quality.openvein.pipeline --modality dorsal_hand --backend matlab --matlab-toolkit-root "C:/Users/user/Downloads/OpenVein-Toolkit_v1.0.2" --quality high_quality --extractors PC --output debug_openvein_features --continue-on-error
+```
+
+Palm (all auto-detected datasets):
+
+```powershell
+python -m vascular_quality.openvein.pipeline --modality palm --backend matlab --matlab-toolkit-root "C:/Users/user/Downloads/OpenVein-Toolkit_v1.0.2" --quality high_quality --extractors PC --output debug_openvein_features --continue-on-error
 ```
 
 Dry-run (validate paths and counts, no extraction):
@@ -119,24 +191,22 @@ Dry-run (validate paths and counts, no extraction):
 python -m vascular_quality.openvein.pipeline --backend matlab --matlab-toolkit-root "C:/Users/user/Downloads/OpenVein-Toolkit_v1.0.2" --dataset all --quality all --extractors PC --dry-run
 ```
 
-Output layout:
-
-```text
-debug_openvein_features/
-  {PLUS|IDIAP|SCUT}/
-    {high_quality|low_quality}/
-      PC/
-        {stem}.png
-```
-
 | Flag | Purpose |
 |------|---------|
-| `--dataset all` | Run PLUS, IDIAP, and SCUT |
-| `--quality all` | Run high_quality and low_quality |
-| `--continue-on-error` | Log a failed job and continue |
+| `--modality` | `finger_vein` (default), `dorsal_hand`, or `palm` |
+| `--dataset` | Dataset name, path, or `all`. Required for finger vein unless `--input` is set. Optional for dorsal hand / palm (auto-detect when omitted). |
+| `--dataset all` | Finger vein: PLUS, IDIAP, SCUT. Dorsal/palm: every dataset under `data/{modality}/`. |
+| `--quality all` | Run `high_quality` and `low_quality` |
+| `--continue-on-error` | Log a failed extractor and continue |
 | `--clean-output` | Remove stale vein maps before extraction |
 | `--limit N` | Process only the first N images (smoke test) |
 | `--backend python` | Approximate fallback only (not for final experiments) |
+
+#### Modality-specific notes
+
+- Finger vein behavior is unchanged when `--modality` is omitted (defaults to `finger_vein`).
+- Dorsal hand and palm use the same OpenVein MATLAB algorithms; only input paths differ.
+- Use distinct dataset folder names across modalities if sharing one `--output` root, because feature maps are keyed by `{DATASET}/{quality}/` only.
 
 ---
 
