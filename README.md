@@ -349,3 +349,252 @@ Ignored (local only):
 Core implementations at repo root: `q1.py` … `q9.py`, `unified_quality.py`, `iso_*.py`, `vessel_utils.py`.
 
 Unified score uses an **experimental equal-weight baseline** (`αᵢ = 1/9`) until calibrated ISO coefficients are available.
+
+---
+
+## Running Experiments
+
+This section is a command-level reference for reproducing experiments from a clean checkout.
+It is based on the currently implemented CLIs in this repository.
+
+### Finger Vein
+
+Full production experiment command:
+
+```powershell
+python run_finger_vein_experiment.py --extractor PC --datasets PLUS IDIAP SCUT --qualities high_quality low_quality --output results/finger_vein/PC --save-excel --vessel-cleanup heuristic_default
+```
+
+Arguments:
+
+| Argument | Meaning |
+|---|---|
+| `--extractor PC` | Use OpenVein Principal Curvature (the only supported extractor in this production runner). |
+| `--datasets PLUS IDIAP SCUT` | Run every supported finger-vein dataset. |
+| `--qualities high_quality low_quality` | Run both supported quality folders. |
+| `--output results/finger_vein/PC` | Write CSV/Excel/log outputs under this folder. |
+| `--save-excel` | Enable Excel exports (`.xlsx`). |
+| `--vessel-cleanup heuristic_default` | Use the default non-normative cleanup preset for PC maps before Q8/Q9 skeletonization. |
+
+Supported values (finger vein):
+
+- Datasets: `PLUS`, `IDIAP`, `SCUT`
+- Qualities: `high_quality`, `low_quality`
+- Extractor in production runner: `PC`
+
+Supported operational options:
+
+- `--output`: yes
+- `--save-excel`: yes
+- Progress reporting: yes (`--progress-every`, `--quiet`, optional `tqdm`)
+- Disable debug image generation for large runs: default behavior (do **not** pass `--save-debug-images`)
+
+Outputs generated:
+
+- `q1_q9_pc_results.csv`
+- `q1_q9_pc_results.xlsx` (when `--save-excel` is set)
+- `q1_q9_pc_summary.xlsx` (when `--save-excel` is set)
+- `q1_q9_pc_log.txt`
+
+### Dorsal Hand
+
+Full experiment command (auto-detect datasets under `data/dorsal_hand/`):
+
+```powershell
+python run_dorsal_hand_experiment.py --qualities high_quality low_quality --output results/dorsal_hand --save-excel --save-csv --no-debug --progress 10
+```
+
+Supported values:
+
+- Datasets: auto-detected from `data/dorsal_hand/{DATASET}/`
+- Qualities: any folder names passed in `--qualities` (commonly `high_quality low_quality`)
+- Extractor: `PC` (same OpenVein map contract as production runner)
+
+Supported operational options:
+
+- `--output`: yes
+- `--save-excel`: yes
+- `--save-csv`: yes
+- Progress reporting: yes (`--progress N`, elapsed, ETA, final summary)
+- Disable debug image generation: yes (`--no-debug`)
+
+### Palm
+
+Full experiment command (auto-detect datasets under `data/palm/`):
+
+```powershell
+python run_palm_experiment.py --qualities high_quality low_quality --output results/palm --save-excel --save-csv --no-debug --progress 10
+```
+
+Supported values:
+
+- Datasets: auto-detected from `data/palm/{DATASET}/`
+- Qualities: any folder names passed in `--qualities` (commonly `high_quality low_quality`)
+- Extractor: `PC` (same OpenVein map contract as production runner)
+
+Supported operational options:
+
+- `--output`: yes
+- `--save-excel`: yes
+- `--save-csv`: yes
+- Progress reporting: yes (`--progress N`, elapsed, ETA, final summary)
+- Disable debug image generation: yes (`--no-debug`)
+
+### Modality Differences vs Finger Vein
+
+1. Finger vein runner is fixed to known datasets (`PLUS IDIAP SCUT`) and includes extra options like `--extractor`, `--dry-run`, and `--vessel-cleanup`.
+2. Dorsal/palm runners auto-detect dataset names from folder structure and expose the requested unified CLI: `--datasets --qualities --output --save-excel --save-csv --no-debug --progress`.
+3. All three modalities reuse the same Q1-Q9 computation engine; dorsal/palm switch capture-site coefficients to `PALM_OR_DORSAL`.
+
+### Output Folder Structure
+
+Current implemented layout:
+
+```text
+results/
+  finger_vein/
+    PC/
+      q1_q9_pc_results.csv
+      q1_q9_pc_results.xlsx
+      q1_q9_pc_summary.xlsx
+      q1_q9_pc_log.txt
+  dorsal_hand/
+    q1_q9_pc_results.csv
+    q1_q9_pc_results.xlsx
+    q1_q9_pc_summary.xlsx
+    q1_q9_pc_log.txt
+  palm/
+    q1_q9_pc_results.csv
+    q1_q9_pc_results.xlsx
+    q1_q9_pc_summary.xlsx
+    q1_q9_pc_log.txt
+```
+
+### Excel/CSV Columns (Finger Vein Production Export)
+
+`q1_q9_pc_results.csv` and the `per_image_results` sheet in `q1_q9_pc_results.xlsx` contain:
+
+| Column | Meaning |
+|---|---|
+| `metric_modality` | Modality label written by the runner (`finger_vein`). |
+| `dataset` | Dataset name (`PLUS`, `IDIAP`, `SCUT`). |
+| `quality_folder` | Quality partition (`high_quality` or `low_quality`). |
+| `extractor` | OpenVein extractor tag (`PC`). |
+| `image_name` | Image filename only (no absolute path). |
+| `vessel_cleanup` | Vessel cleanup preset used for Q8/Q9 preprocessing. |
+| `Q1` | Effective area score. |
+| `Q2` | Offset complement / centering score. |
+| `Q3` | Gray-level spread related score. |
+| `Q4` | Gray-level distribution quality score. |
+| `Q5` | Entropy-based information content score. |
+| `Q6` | Sharpness score. |
+| `Q7` | Contrast consistency score. |
+| `Q8` | Total vascular length proxy (skeleton count normalized by capture-site coefficients). |
+| `Q9` | Feature points quality from endpoints/intersections. |
+| `n_vessels` | Skeleton pixel count used for Q8 (`N_vessel`). |
+| `endpoints` | Endpoint count used in Q9 (`N_end`). |
+| `intersections` | Intersection count used in Q9 (`N_int`). |
+| `unified_score` | Unified quality score from Q1-Q9. |
+
+`q1_q9_pc_summary.xlsx` contains `summary_by_dataset_quality` with grouped statistics:
+
+- `dataset`, `quality_folder`, `extractor`, `n_images`
+- For each metric (`Q1`..`Q9`, `unified_score`): `_mean`, `_std`, `_min`, `_max`
+
+### Progress Reporting During Long Runs
+
+Progress behavior in `run_finger_vein_experiment.py`:
+
+- Group header at dataset/quality start
+- Per-image updates with elapsed time and ETA
+- Total processed count and percentage
+- Final run summary with processed/failed/skipped counts
+- Optional `tqdm` total bar if installed
+
+Useful flags:
+
+- `--progress-every N` to reduce print frequency
+- `--quiet` to suppress routine progress lines
+
+### Disabling Debug Images for Large Experiments
+
+For large runs (>1000 images), debug output is already disabled by default.
+
+- Keep debug output disabled: do not pass `--save-debug-images`
+- Enable only when troubleshooting a small subset: add `--save-debug-images`
+
+### Example Runtime Commands
+
+Finger vein (full):
+
+```powershell
+python run_finger_vein_experiment.py --extractor PC --datasets PLUS IDIAP SCUT --qualities high_quality low_quality --output results/finger_vein/PC --save-excel --vessel-cleanup heuristic_default --progress-every 10
+```
+
+Finger vein (dry-run validation):
+
+```powershell
+python run_finger_vein_experiment.py --extractor PC --datasets PLUS IDIAP SCUT --qualities high_quality low_quality --output results/finger_vein/PC --save-excel --vessel-cleanup heuristic_default --dry-run
+```
+
+Dorsal hand (auto dataset detection):
+
+```powershell
+python run_dorsal_hand_experiment.py --qualities high_quality low_quality --output results/dorsal_hand --save-excel --save-csv --no-debug --progress 10
+```
+
+Palm (auto dataset detection):
+
+```powershell
+python run_palm_experiment.py --qualities high_quality low_quality --output results/palm --save-excel --save-csv --no-debug --progress 10
+```
+
+### Troubleshooting
+
+#### Missing dataset folders
+
+If dry-run reports missing input folders, confirm your layout is:
+
+```text
+data/finger_vein/{PLUS|IDIAP|SCUT}/{high_quality|low_quality}/
+data/dorsal_hand/{DATASET}/{high_quality|low_quality}/
+data/palm/{DATASET}/{high_quality|low_quality}/
+```
+
+#### Unsupported dataset names
+
+Production finger-vein runner accepts only:
+
+- `PLUS`
+- `IDIAP`
+- `SCUT`
+
+Any other name fails argument validation.
+
+#### Missing PC feature maps
+
+If the experiment reports missing vein maps, generate OpenVein PC outputs first:
+
+```powershell
+python -m vascular_quality.openvein.pipeline --backend matlab --matlab-toolkit-root "C:/Users/user/Downloads/OpenVein-Toolkit_v1.0.2" --dataset all --quality all --extractors PC --output debug_openvein_features --clean-output --continue-on-error
+```
+
+#### MATLAB / OpenVein backend issues
+
+- Verify MATLAB Engine import:
+
+```powershell
+python -c "import matlab.engine; print('MATLAB Engine OK')"
+```
+
+- Verify extractor availability:
+
+```powershell
+python -m vascular_quality.openvein.pipeline --list-extractors
+```
+
+- Run pipeline dry-run for diagnostics:
+
+```powershell
+python -m vascular_quality.openvein.pipeline --backend matlab --matlab-toolkit-root "C:/Users/user/Downloads/OpenVein-Toolkit_v1.0.2" --dataset all --quality all --extractors PC --dry-run
+```
