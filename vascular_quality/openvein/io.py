@@ -9,7 +9,7 @@ import numpy as np
 
 from vascular_quality.common.images import list_images_in_dir
 from vascular_quality.common.openvein import vein_map_basename
-from vascular_quality.common.paths import ensure_dir
+from vascular_quality.common.paths import ensure_dir, openvein_vein_map_dir
 
 
 def load_grayscale(image_path: Path | str) -> np.ndarray:
@@ -64,12 +64,21 @@ def list_input_images(input_dir: Path | str) -> list[Path]:
 
 def extractor_output_dir(
     output_root: Path | str,
+    modality: str,
     dataset: str,
     quality: str,
     extractor: str,
 ) -> Path:
-    """``{output_root}/{dataset}/{quality}/{extractor}/``"""
-    return ensure_dir(Path(output_root) / dataset / quality / extractor)
+    """Resolve and create the OpenVein extractor output directory for one run."""
+    return ensure_dir(
+        openvein_vein_map_dir(
+            dataset,
+            quality,
+            extractor,
+            modality=modality,
+            output_root=Path(output_root),
+        )
+    )
 
 
 def expected_output_names(input_images: list[Path]) -> set[str]:

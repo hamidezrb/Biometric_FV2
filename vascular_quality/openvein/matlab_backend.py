@@ -16,6 +16,7 @@ from vascular_quality.openvein.backend import (
     ExtractionBackend,
     ExtractionJob,
 )
+from vascular_quality.common.paths import openvein_quality_dir
 from vascular_quality.openvein.io import (
     collect_written_outputs,
     extractor_output_dir,
@@ -191,7 +192,9 @@ class MatlabOpenVeinBackend(ExtractionBackend):
         print(f"Modality: {job.modality}")
         limit_note = f", limit={job.limit}" if job.limit is not None else ""
         print(f"Input:   {job.image_dir} ({len(images)} image(s){limit_note})")
-        print(f"Output:  {job.output_root / job.dataset / job.quality}/{{EXTRACTOR}}/")
+        print(
+            f"Output:  {openvein_quality_dir(job.dataset, job.quality, modality=job.modality, output_root=job.output_root)}/{{EXTRACTOR}}/"
+        )
         print(f"Toolkit: {toolkit_root}")
 
         input_dir, cleanup_dir = prepare_matlab_input_dir(job.image_dir, images)
@@ -199,7 +202,7 @@ class MatlabOpenVeinBackend(ExtractionBackend):
             eng = self._start_engine(toolkit_root)
             for tag in job.extractors:
                 out_dir = extractor_output_dir(
-                    job.output_root, job.dataset, job.quality, tag
+                    job.output_root, job.modality, job.dataset, job.quality, tag
                 )
                 if clean_output:
                     remove_stale_outputs(out_dir, images, extractor=tag)

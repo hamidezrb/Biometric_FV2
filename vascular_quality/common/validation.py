@@ -96,7 +96,7 @@ def validate_images_present(image_dir: Path) -> list[Path]:
 
 def validate_openvein_layout(dataset: str, quality: str = "all") -> list[str]:
     """
-    Ensure debug_openvein_features/{dataset}/{quality}/{extractor}/ folders exist.
+    Ensure debug_openvein_features/finger_vein/{dataset}/{quality}/{extractor}/ folders exist.
 
     Returns validated quality class names. Does not require PNG files inside.
     """
@@ -152,7 +152,7 @@ def validate_vein_maps_present(
             f"--backend matlab --dataset {dataset} --quality {quality} "
             f"--extractors {extractor}\n"
             f"Or create:\n"
-            f"  debug_openvein_features/{dataset}/{quality}/{extractor}/\n"
+            f"  debug_openvein_features/finger_vein/{dataset}/{quality}/{extractor}/\n"
             f"with one vein map per input image (same filename)."
         )
 

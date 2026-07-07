@@ -1,10 +1,14 @@
 """
 Configurable project paths for datasets and OpenVein debug features.
 
-Layout (finger vein):
-  data/finger_vein/{DATASET}/{quality}/images...
-  debug_openvein_features/{DATASET}/{quality}/{EXTRACTOR}/images...
-  debug_outputs/finger_vein/{DATASET}/{quality}/...
+Input layout:
+  data/{modality}/{DATASET}/{quality}/   (Layout A)
+  data/{modality}/{quality}/             (Layout B, dorsal/palm flat)
+
+OpenVein feature-map output layout:
+  debug_openvein_features/finger_vein/{DATASET}/{quality}/{EXTRACTOR}/
+  debug_openvein_features/{modality}/{quality}/{EXTRACTOR}/          (flat)
+  debug_openvein_features/{modality}/{DATASET}/{quality}/{EXTRACTOR}/ (named datasets)
 """
 
 from __future__ import annotations
@@ -28,6 +32,9 @@ OPENVEIN_DATASETS: tuple[str, ...] = ("PLUS", "IDIAP", "SCUT")
 
 VASCULAR_MODALITIES: tuple[str, ...] = ("finger_vein", "dorsal_hand", "palm")
 DEFAULT_MODALITY = "finger_vein"
+
+# Virtual dataset token for Layout B (internal only — never written to output paths or exports).
+DEFAULT_FLAT_DATASET = "default"
 
 QUALITY_CLASSES: tuple[str, ...] = ("high_quality", "low_quality")
 
@@ -61,21 +68,45 @@ def modality_data_root(modality: str = DEFAULT_MODALITY) -> Path:
     return DATA_DIR / modality
 
 
+def modality_has_flat_quality_layout(modality: str = DEFAULT_MODALITY) -> bool:
+    """True when quality folders exist directly under data/{modality}/ (Layout B)."""
+    root = modality_data_root(modality)
+    return root.is_dir() and any((root / q).is_dir() for q in QUALITY_CLASSES)
+
+
 def modality_image_dir(modality: str, dataset: str, quality: str) -> Path:
-    """data/{modality}/{dataset}/{quality}/"""
-    return modality_data_root(modality) / dataset / quality
+    """
+    Resolve the image folder for a modality / dataset / quality triple.
+
+    Layout A: data/{modality}/{dataset}/{quality}/
+    Layout B: data/{modality}/{quality}/  (dataset must be DEFAULT_FLAT_DATASET)
+    """
+    root = modality_data_root(modality)
+    if dataset == DEFAULT_FLAT_DATASET:
+        return root / quality
+    return root / dataset / quality
 
 
 def discover_modality_datasets(modality: str = DEFAULT_MODALITY) -> tuple[str, ...]:
-    """Return dataset folder names under data/{modality}/ that contain quality subfolders."""
+    """
+    Return dataset names under data/{modality}/.
+
+    Layout A: one name per subfolder containing quality folders
+    (e.g. Bosphorus, NCUT).
+    Layout B: returns (DEFAULT_FLAT_DATASET,) when high_quality/low_quality
+    exist directly under data/{modality}/.
+    Both layouts may coexist.
+    """
     root = modality_data_root(modality)
     if not root.is_dir():
         return ()
     datasets: list[str] = []
+    if modality_has_flat_quality_layout(modality):
+        datasets.append(DEFAULT_FLAT_DATASET)
     for child in sorted(root.iterdir()):
-        if not child.is_dir():
+        if not child.is_dir() or child.name in QUALITY_CLASSES:
             continue
-        if any(q.is_dir() for q in child.iterdir()):
+        if any((child / q).is_dir() for q in QUALITY_CLASSES):
             datasets.append(child.name)
     return tuple(datasets)
 
@@ -95,18 +126,63 @@ def finger_vein_image_dir(dataset: str, quality: str) -> Path:
     return modality_image_dir("finger_vein", dataset, quality)
 
 
-def openvein_quality_dir(dataset: str, quality: str) -> Path:
-    """debug_openvein_features/{dataset}/{quality}/"""
-    return DEBUG_OPENVEIN_DIR / dataset / quality
+def export_dataset_name(dataset: str) -> str:
+    """Dataset label for CSV/Excel/logs (empty for internal flat-layout token)."""
+    return "" if dataset == DEFAULT_FLAT_DATASET else dataset
+
+
+def format_known_datasets(discovered: Sequence[str]) -> str:
+    """User-facing dataset list; flat layout shown as '(flat layout)', not the internal token."""
+    visible = [d for d in discovered if d != DEFAULT_FLAT_DATASET]
+    if DEFAULT_FLAT_DATASET in discovered:
+        visible.append("(flat layout)")
+    return ", ".join(visible) if visible else "(none detected)"
+
+
+def progress_group_label(modality: str, dataset: str, quality: str) -> str:
+    """Progress/log group key without exposing the internal flat-layout token."""
+    if dataset == DEFAULT_FLAT_DATASET:
+        return f"{modality}/{quality}"
+    return f"{dataset}/{quality}"
+
+
+def openvein_quality_dir(
+    dataset: str,
+    quality: str,
+    *,
+    modality: str = DEFAULT_MODALITY,
+    output_root: Path | None = None,
+) -> Path:
+    """
+    OpenVein feature-map parent directory (quality level, no extractor).
+
+    Finger vein: {root}/finger_vein/{dataset}/{quality}/
+    Flat dorsal/palm: {root}/{modality}/{quality}/
+    Named dorsal/palm: {root}/{modality}/{dataset}/{quality}/
+    """
+    root = Path(output_root) if output_root is not None else DEBUG_OPENVEIN_DIR
+    if modality == "finger_vein":
+        return root / "finger_vein" / dataset / quality
+    if dataset == DEFAULT_FLAT_DATASET:
+        return root / modality / quality
+    return root / modality / dataset / quality
 
 
 def openvein_vein_map_dir(
     dataset: str,
     quality: str,
     extractor: str = DEFAULT_OPENVEIN_EXTRACTOR,
+    *,
+    modality: str = DEFAULT_MODALITY,
+    output_root: Path | None = None,
 ) -> Path:
-    """debug_openvein_features/{dataset}/{quality}/{extractor}/"""
-    return openvein_quality_dir(dataset, quality) / extractor
+    """OpenVein extractor output directory for one modality/dataset/quality run."""
+    return openvein_quality_dir(
+        dataset,
+        quality,
+        modality=modality,
+        output_root=output_root,
+    ) / extractor
 
 
 def finger_vein_vein_map_dir(
@@ -114,8 +190,13 @@ def finger_vein_vein_map_dir(
     quality: str,
     extractor: str = DEFAULT_OPENVEIN_EXTRACTOR,
 ) -> Path:
-    """Alias for openvein_vein_map_dir (finger-vein datasets use the same tree)."""
-    return openvein_vein_map_dir(dataset, quality, extractor)
+    """debug_openvein_features/finger_vein/{dataset}/{quality}/{extractor}/"""
+    return openvein_vein_map_dir(
+        dataset,
+        quality,
+        extractor,
+        modality="finger_vein",
+    )
 
 
 def finger_vein_debug_output_dir(dataset: str, quality: str) -> Path:
@@ -200,15 +281,26 @@ def iter_modality_dataset_classes(
         if not discovered:
             raise ValueError(
                 f"No datasets found under {modality_data_root(modality)}. "
-                f"Create data/{modality}/{{DATASET}}/{{high_quality|low_quality}}/ first."
+                f"Create data/{modality}/{{DATASET}}/{{high_quality|low_quality}}/ "
+                f"or data/{modality}/{{high_quality|low_quality}}/ first."
             )
         return discovered
 
     path = Path(dataset)
     name = path.name if path.parts else dataset
+    if name == DEFAULT_FLAT_DATASET:
+        if not modality_has_flat_quality_layout(modality):
+            known = format_known_datasets(discovered)
+            raise ValueError(
+                f"Flat layout not found for modality {modality}. "
+                f"Expected quality folders under data/{modality}/. "
+                f"Known datasets: {known}."
+            )
+        return (DEFAULT_FLAT_DATASET,)
+
     ds_root = modality_data_root(modality) / name
-    if not ds_root.is_dir():
-        known = ", ".join(discovered) if discovered else "(none detected)"
+    if not ds_root.is_dir() or name not in discovered:
+        known = format_known_datasets(discovered)
         raise ValueError(
             f"Unknown dataset {name!r} for modality {modality}. "
             f"Expected one of: {known}, 'all', or a path under data/{modality}/."

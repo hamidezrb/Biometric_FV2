@@ -15,8 +15,10 @@ from vascular_quality.common.paths import (
     DEFAULT_MODALITY,
     OPENVEIN_EXTRACTORS,
     QUALITY_CLASSES,
+    export_dataset_name,
     iter_modality_dataset_classes,
     modality_image_dir,
+    openvein_quality_dir,
 )
 from vascular_quality.finger_vein.config import FINGER_VEIN_DATASETS
 from vascular_quality.openvein.extractors import EXTRACTOR_NAMES
@@ -153,20 +155,24 @@ class ExtractionBackend(ABC):
         images = self.validate_job(job)
         print(f"Backend:     {self.kind}")
         print(f"Modality:    {job.modality}")
-        print(f"Dataset:     {job.dataset}")
+        ds_label = export_dataset_name(job.dataset)
+        if ds_label:
+            print(f"Dataset:     {ds_label}")
         print(f"Quality:     {job.quality}")
         limit_note = f" (limit {job.limit})" if job.limit is not None else ""
         print(f"Input:       {job.image_dir} ({len(images)} image(s){limit_note})")
-        print(f"Output root: {job.output_root / job.dataset / job.quality}/")
+        print(
+            f"Output root: {openvein_quality_dir(job.dataset, job.quality, modality=job.modality, output_root=job.output_root)}/"
+        )
         print(f"Extractors:  {', '.join(job.extractors)}")
         for tag in job.extractors:
             out_dir = extractor_output_dir(
-                job.output_root, job.dataset, job.quality, tag
+                job.output_root, job.modality, job.dataset, job.quality, tag
             )
             print(f"  {tag} -> {out_dir}")
         for tag in job.extractors:
             out_dir = extractor_output_dir(
-                job.output_root, job.dataset, job.quality, tag
+                job.output_root, job.modality, job.dataset, job.quality, tag
             )
             report_stale_outputs(out_dir, images, extractor=tag)
         self._dry_run_backend(job, toolkit_root=toolkit_root)

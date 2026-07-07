@@ -136,7 +136,7 @@ def print_summary(created: list[Path], migrated_images, migrated_veins, removed_
     print("\nExpected image layout:")
     print("  data/finger_vein/{PLUS,IDIAP,SCUT}/{high_quality,low_quality}/*.png")
     print("\nExpected OpenVein vein maps:")
-    print("  debug_openvein_features/{DATASET}/{quality}/{RLT,MC,WLD,PC,GF,EMC}/")
+    print("  debug_openvein_features/finger_vein/{DATASET}/{quality}/{RLT,MC,WLD,PC,GF,EMC}/")
     print("\nISO debug visualizations (optional, off by default):")
     print("  debug_outputs/finger_vein/_runs/{timestamp}/...")
     print(f"\nDirectories ensured: {len(created)}")
@@ -144,7 +144,7 @@ def print_summary(created: list[Path], migrated_images, migrated_veins, removed_
     if migrated_images:
         print(f"\nMigrated {len(migrated_images)} image(s) from test_images/ -> data/finger_vein/PLUS/")
     if migrated_veins:
-        print(f"Migrated {len(migrated_veins)} vein map(s) to debug_openvein_features/PLUS/...")
+        print(f"Migrated {len(migrated_veins)} vein map(s) to debug_openvein_features/finger_vein/PLUS/...")
     if removed_flat:
         print(f"Removed {len(removed_flat)} legacy flat extractor folder(s).")
 

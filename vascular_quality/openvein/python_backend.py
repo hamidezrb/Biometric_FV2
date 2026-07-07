@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from vascular_quality.common.paths import openvein_quality_dir
 from vascular_quality.openvein.backend import (
     BackendKind,
     ExtractionBackend,
@@ -76,7 +77,9 @@ class PythonOpenVeinBackend(ExtractionBackend):
         print(f"Modality: {job.modality}")
         limit_note = f", limit={job.limit}" if job.limit is not None else ""
         print(f"Input:   {job.image_dir} ({len(images)} image(s){limit_note})")
-        print(f"Output:  {job.output_root / job.dataset / job.quality}/{{EXTRACTOR}}/")
+        print(
+            f"Output:  {openvein_quality_dir(job.dataset, job.quality, modality=job.modality, output_root=job.output_root)}/{{EXTRACTOR}}/"
+        )
         print(f"Preprocess skip_unavailable={skip_unavailable_preprocess}")
 
         for tag in job.extractors:
@@ -95,7 +98,7 @@ class PythonOpenVeinBackend(ExtractionBackend):
                 raise ExtractorUnavailable(msg)
 
             out_dir = extractor_output_dir(
-                job.output_root, job.dataset, job.quality, tag
+                job.output_root, job.modality, job.dataset, job.quality, tag
             )
             if clean_output:
                 remove_stale_outputs(out_dir, images, extractor=tag)

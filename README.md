@@ -21,7 +21,7 @@ data/finger_vein/{DATASET}/{quality}/          ← input images (not in Git)
         ↓
 vascular_quality.openvein.pipeline             ← OpenVein PC extraction (MATLAB)
         ↓
-debug_openvein_features/{DATASET}/{quality}/PC/  ← vein maps (not in Git)
+debug_openvein_features/finger_vein/{DATASET}/{quality}/PC/  ← vein maps (not in Git)
         ↓
 run_finger_vein_experiment.py                  ← ISO Q1–Q9 + unified score
         ↓
@@ -54,14 +54,25 @@ data/
       high_quality/
       low_quality/
   dorsal_hand/
-    {DATASET}/
+    {DATASET}/              ← Layout A (named datasets, e.g. Bosphorus)
       high_quality/
       low_quality/
+    high_quality/           ← Layout B (flat; no dataset subfolder)
+    low_quality/
   palm/
-    {DATASET}/
+    {DATASET}/              ← Layout A
       high_quality/
       low_quality/
+    high_quality/           ← Layout B (flat; no dataset subfolder)
+    low_quality/
 ```
+
+Dorsal hand and palm support **two folder layouts** (both can coexist):
+
+- **Layout A:** `data/{modality}/{DATASET}/{quality}/` — dataset names are auto-detected (e.g. `Bosphorus`, `NCUT`).
+- **Layout B:** `data/{modality}/{quality}/` — images live directly under the modality folder (no dataset subfolder).
+
+Finger vein always uses Layout A with fixed dataset names (`PLUS`, `IDIAP`, `SCUT`).
 
 Supported formats: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tif`, `.tiff`
 
@@ -115,7 +126,7 @@ OpenVein feature extraction supports three vascular modalities:
 - **Dorsal Hand** (`--modality dorsal_hand`)
 - **Palm** (`--modality palm`)
 
-All modalities use the same MATLAB backend, extractor interfaces, output layout, logging, and CLI flags. Images are read from `data/{modality}/{DATASET}/{quality}/` and feature maps are written to `{output}/{DATASET}/{quality}/{EXTRACTOR}/`.
+All modalities use the same MATLAB backend, extractor interfaces, output layout, logging, and CLI flags. Feature maps are written under `debug_openvein_features/` using modality-prefixed paths (see [Output layout](#output-layout) below).
 
 Required toolkit:
 
@@ -125,39 +136,69 @@ OpenVein-Toolkit_v1.0.2
 
 #### Folder structure
 
+**Finger vein** (Layout A only):
+
+```text
+data/finger_vein/{PLUS|IDIAP|SCUT}/{high_quality|low_quality}/
+```
+
+**Dorsal hand / palm** — Layout A (named datasets):
+
+```text
+data/{modality}/{DATASET}/{high_quality|low_quality}/
+```
+
+**Dorsal hand / palm** — Layout B (flat, no dataset subfolder):
+
+```text
+data/{modality}/{high_quality|low_quality}/
+```
+
+Both layouts may coexist under the same modality.
+
+Full tree example:
+
 ```text
 data/
   finger_vein/
     PLUS/
       high_quality/
       low_quality/
-    IDIAP/
-      high_quality/
-      low_quality/
-    SCUT/
-      high_quality/
-      low_quality/
   dorsal_hand/
-    {DATASET}/
+    high_quality/           ← Layout B
+    low_quality/
+    Bosphorus/              ← Layout A
       high_quality/
       low_quality/
   palm/
-    {DATASET}/
+    high_quality/           ← Layout B
+    low_quality/
+    NCUT/                   ← Layout A
       high_quality/
       low_quality/
 ```
-
-Dorsal-hand and palm dataset names are **auto-detected** from folder names under `data/dorsal_hand/` and `data/palm/` (for example `Bosphorus`, `NCUT`).
 
 #### Output layout
 
 ```text
 debug_openvein_features/
-  {DATASET}/
-    {high_quality|low_quality}/
+  finger_vein/
+    PLUS/
+      high_quality/
+        PC/
+          {stem}.png
+  dorsal_hand/
+    high_quality/           ← flat layout (Layout B)
       PC/
-        {stem}.png
+    Bosphorus/              ← named dataset (Layout A)
+      high_quality/
+        PC/
+  palm/
+    high_quality/
+      PC/
 ```
+
+Dorsal-hand and palm dataset names are **auto-detected** from folder names under `data/dorsal_hand/` and `data/palm/`. Flat layouts (quality folders directly under the modality) do not create a dataset segment in output paths.
 
 #### Example commands
 
@@ -206,7 +247,8 @@ python -m vascular_quality.openvein.pipeline --backend matlab --matlab-toolkit-r
 
 - Finger vein behavior is unchanged when `--modality` is omitted (defaults to `finger_vein`).
 - Dorsal hand and palm use the same OpenVein MATLAB algorithms; only input paths differ.
-- Use distinct dataset folder names across modalities if sharing one `--output` root, because feature maps are keyed by `{DATASET}/{quality}/` only.
+- Flat layouts write feature maps to `debug_openvein_features/{modality}/{quality}/` with no dataset folder segment.
+- Use distinct dataset folder names across modalities if sharing one `--output` root.
 
 ---
 
@@ -218,7 +260,7 @@ python -m vascular_quality.openvein.pipeline --backend matlab --matlab-toolkit-r
 |---|---|
 | **Purpose** | Compute Q1–Q9 + unified score using **PC (Principal Curvature)** OpenVein maps; export Excel/CSV for statistical analysis |
 | **When to use** | Final experiments and thesis analysis (single extractor: PC) |
-| **Required inputs** | Images in `data/finger_vein/{DATASET}/{quality}/`; PC maps in `debug_openvein_features/{DATASET}/{quality}/PC/{stem}.png` |
+| **Required inputs** | Images in `data/finger_vein/{DATASET}/{quality}/`; PC maps in `debug_openvein_features/finger_vein/{DATASET}/{quality}/PC/{stem}.png` |
 | **Output** | `q1_q9_pc_results.xlsx`, `q1_q9_pc_results.csv`, `q1_q9_pc_summary.xlsx`, `q1_q9_pc_log.txt` |
 
 **Defaults for large runs:** debug images **off**, `heuristic_default` vessel cleanup, CSV + log always written; Excel when `--save-excel` is set.
@@ -476,7 +518,7 @@ python run_dorsal_hand_experiment.py --qualities high_quality low_quality --outp
 
 Supported values:
 
-- Datasets: auto-detected from `data/dorsal_hand/{DATASET}/`
+- Datasets: auto-detected — Layout A folders under `data/dorsal_hand/{DATASET}/`, or flat Layout B when `data/dorsal_hand/{high_quality|low_quality}/` exists
 - Qualities: any folder names passed in `--qualities` (commonly `high_quality low_quality`)
 - Extractor: `PC` (same OpenVein map contract as production runner)
 
@@ -498,7 +540,7 @@ python run_palm_experiment.py --qualities high_quality low_quality --output resu
 
 Supported values:
 
-- Datasets: auto-detected from `data/palm/{DATASET}/`
+- Datasets: auto-detected — Layout A folders under `data/palm/{DATASET}/`, or flat Layout B when `data/palm/{high_quality|low_quality}/` exists
 - Qualities: any folder names passed in `--qualities` (commonly `high_quality low_quality`)
 - Extractor: `PC` (same OpenVein map contract as production runner)
 
@@ -627,8 +669,10 @@ If dry-run reports missing input folders, confirm your layout is:
 
 ```text
 data/finger_vein/{PLUS|IDIAP|SCUT}/{high_quality|low_quality}/
-data/dorsal_hand/{DATASET}/{high_quality|low_quality}/
-data/palm/{DATASET}/{high_quality|low_quality}/
+
+Dorsal hand / palm — either layout:
+  data/{modality}/{DATASET}/{high_quality|low_quality}/     (Layout A)
+  data/{modality}/{high_quality|low_quality}/               (Layout B)
 ```
 
 #### Unsupported dataset names

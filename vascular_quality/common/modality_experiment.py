@@ -24,7 +24,10 @@ from vascular_quality.common.paths import (
     PROJECT_ROOT,
     discover_modality_datasets,
     ensure_dir,
+    export_dataset_name,
+    modality_image_dir,
     openvein_vein_map_dir,
+    progress_group_label,
 )
 from vascular_quality.common.pipeline import run_q1_q9_on_image
 from vascular_quality.finger_vein.config import (
@@ -52,7 +55,7 @@ class ModalitySpec:
 
 
 def _modality_image_dir(spec: ModalitySpec, dataset: str, quality: str) -> Path:
-    return spec.data_root / dataset / quality
+    return modality_image_dir(spec.name, dataset, quality)
 
 
 def discover_supported_datasets(spec: ModalitySpec) -> list[str]:
@@ -68,8 +71,7 @@ def _collect_jobs(
     jobs: list[tuple[str, str, Path, Path]] = []
     supported = discover_supported_datasets(spec)
     for dataset in datasets:
-        dataset_root = spec.data_root / dataset
-        if not dataset_root.is_dir():
+        if dataset not in supported:
             raise ValueError(
                 f"Unknown dataset {dataset!r} for modality {spec.name}. "
                 f"Expected one of: {', '.join(supported) if supported else '(none detected)'}."
@@ -78,7 +80,9 @@ def _collect_jobs(
             image_dir = _modality_image_dir(spec, dataset, quality)
             if not image_dir.is_dir():
                 continue
-            vein_root = openvein_vein_map_dir(dataset, quality, extractor)
+            vein_root = openvein_vein_map_dir(
+                dataset, quality, extractor, modality=spec.name
+            )
             for image_path in list_images_in_dir(image_dir):
                 jobs.append((dataset, quality, image_path, vein_root))
     return jobs
@@ -94,7 +98,7 @@ def _row_from_result(
 ) -> dict[str, Any]:
     return {
         "metric_modality": spec.name,
-        "dataset": dataset,
+        "dataset": export_dataset_name(dataset),
         "quality_folder": quality,
         "extractor": extractor,
         "image_name": image_path.name,
@@ -139,7 +143,9 @@ def run_dry_run(
     for dataset in datasets:
         for quality in qualities:
             image_dir = _modality_image_dir(spec, dataset, quality)
-            vein_dir = openvein_vein_map_dir(dataset, quality, DEFAULT_EXTRACTOR)
+            vein_dir = openvein_vein_map_dir(
+                dataset, quality, DEFAULT_EXTRACTOR, modality=spec.name
+            )
 
             if not image_dir.is_dir():
                 issues.append(f"Missing input folder: {image_dir}")
@@ -147,7 +153,8 @@ def run_dry_run(
 
             images = list_images_in_dir(image_dir)
             total_inputs += len(images)
-            buf.write(f"{dataset}/{quality}\n")
+            group_label = progress_group_label(spec.name, dataset, quality)
+            buf.write(f"{group_label}\n")
             buf.write(f"  Input images: {len(images)}\n")
 
             names = [p.name for p in images]
@@ -165,15 +172,15 @@ def run_dry_run(
                     if vpath.is_file():
                         present += 1
                     else:
-                        missing_maps.append(f"{dataset}/{quality}: {vpath.name}")
+                        missing_maps.append(f"{group_label}: {vpath.name}")
                 extra = sorted(pc_stems - expected_stems)
                 for stem in extra:
-                    extra_maps.append(f"{dataset}/{quality}: {stem}.png")
+                    extra_maps.append(f"{group_label}: {stem}.png")
             else:
                 issues.append(f"Missing PC feature folder: {vein_dir}")
                 for img in images:
                     missing_maps.append(
-                        f"{dataset}/{quality}: {vein_map_path(vein_dir, img).name}"
+                        f"{group_label}: {vein_map_path(vein_dir, img).name}"
                     )
 
             total_pc_maps += present
@@ -298,8 +305,10 @@ def run_modality_experiment(
 
     try:
         for dataset, quality, group_jobs in _iter_job_groups(jobs):
+            display_dataset = export_dataset_name(dataset) or spec.name
+            group_label = progress_group_label(spec.name, dataset, quality)
             progress_report.start_group(
-                dataset,
+                display_dataset,
                 quality,
                 len(group_jobs),
                 extractor=DEFAULT_EXTRACTOR,
@@ -311,26 +320,24 @@ def run_modality_experiment(
                     report.missing_pc_maps.append(str(vein_path))
                     report.total_skipped += 1
                     progress_report.warn_missing_pc_map(
-                        dataset, quality, image_path.name, vein_path
+                        display_dataset, quality, image_path.name, vein_path
                     )
                     log.write(
-                        f"SKIP {dataset}/{quality}/{image_path.name} "
+                        f"SKIP {group_label}/{image_path.name} "
                         f"(missing PC map: {vein_path.name})\n"
                     )
                     continue
 
                 runnable += 1
                 try:
+                    debug_parts = ["debug_outputs", spec.name]
+                    if export_dataset_name(dataset):
+                        debug_parts.append(dataset)
+                    debug_parts.extend([quality, image_path.stem])
                     result = run_q1_q9_on_image(
                         image_path,
                         vein_root,
-                        out_dir=(
-                            output_dir
-                            / "debug_outputs"
-                            / dataset
-                            / quality
-                            / image_path.stem
-                        ),
+                        out_dir=output_dir.joinpath(*debug_parts),
                         save_debug_images=save_debug_images,
                         capture_site=spec.capture_site,
                         openvein_cleanup=cleanup,
@@ -346,10 +353,12 @@ def run_modality_experiment(
                         )
                     )
                     report.total_processed += 1
-                    progress_report.on_image_done(dataset, quality, image_path.name)
+                    progress_report.on_image_done(
+                        display_dataset, quality, image_path.name
+                    )
                     print(
                         f"[{report.total_processed}/{report.total_expected}] "
-                        f"{dataset} {quality} {image_path.name}"
+                        f"{group_label} {image_path.name}"
                     )
                     print(
                         " ".join(
@@ -359,17 +368,19 @@ def run_modality_experiment(
                             ]
                         )
                     )
-                    if dataset not in report.datasets_processed:
-                        report.datasets_processed.append(dataset)
+                    if display_dataset not in report.datasets_processed:
+                        report.datasets_processed.append(display_dataset)
                     if quality == "high_quality":
                         report.high_quality_images += 1
                     else:
                         report.low_quality_images += 1
                 except Exception as exc:
                     report.total_failed += 1
-                    msg = f"{dataset}/{quality}/{image_path.name}: {exc}"
+                    msg = f"{group_label}/{image_path.name}: {exc}"
                     report.errors.append(msg)
-                    progress_report.warn_failure(dataset, quality, image_path.name, exc)
+                    progress_report.warn_failure(
+                        display_dataset, quality, image_path.name, exc
+                    )
                     log.write(f"ERROR: {msg}\n{traceback.format_exc()}\n")
     finally:
         progress_report.close()
