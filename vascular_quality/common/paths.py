@@ -30,7 +30,12 @@ DEBUG_OUTPUTS_DIR = PROJECT_ROOT / "debug_outputs"
 #   EXTRACTOR ∈ RLT, MC, WLD, PC, GF, EMC
 OPENVEIN_DATASETS: tuple[str, ...] = ("PLUS", "IDIAP", "SCUT")
 
-VASCULAR_MODALITIES: tuple[str, ...] = ("finger_vein", "dorsal_hand", "palm")
+VASCULAR_MODALITIES: tuple[str, ...] = (
+    "finger_vein",
+    "dorsal_hand",
+    "palm",
+    "full_hand",
+)
 DEFAULT_MODALITY = "finger_vein"
 
 # Virtual dataset token for Layout B (internal only — never written to output paths or exports).
